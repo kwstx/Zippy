@@ -20,6 +20,7 @@ struct HistoryView: View {
     @State private var exportedFileURL: URL? = nil
     @State private var showingShareSheet: Bool = false
     @State private var showingPaywall: Bool = false
+    @State private var showingImportCSV: Bool = false
 
     @Environment(\.dismiss) private var dismiss
 
@@ -173,15 +174,32 @@ struct HistoryView: View {
                 }
 
                 ToolbarItem(placement: .primaryAction) {
-                    Button(action: { loadHistory() }) {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    HStack(spacing: 12) {
+                        Button(action: { showingImportCSV = true }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.up.doc")
+                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                Text("Import")
+                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            }
                             .foregroundColor(.black)
+                        }
+
+                        Button(action: { loadHistory() }) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                .foregroundColor(.black)
+                        }
                     }
                 }
             }
             .task {
                 loadHistory()
+            }
+            .sheet(isPresented: $showingImportCSV, onDismiss: {
+                loadHistory()
+            }) {
+                ImportCSVView()
             }
             .sheet(isPresented: $showingPaywall) {
                 PaywallSheetView(subscriptionManager: subscriptionManager)

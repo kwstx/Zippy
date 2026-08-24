@@ -135,6 +135,47 @@ struct ReceiptController {
         return receipt
     }
 
+    /// Dedicated backend endpoint to parse CSV exports from other tools with pure-Swift libraries
+    /// and insert the resulting expenses into the exact schema used by native scans.
+    @Sendable
+    func importCSV(req: Request) async throws -> ExtractedReceipt {
+        let csvString: String
+
+        if let multipart = try? req.content.decode(CSVImportUpload.self) {
+            if let file = multipart.file ?? multipart.csv {
+                let buffer = file.data
+                guard let str = buffer.getString(at: 0, length: buffer.readableBytes) else {
+                    throw Abort(.badRequest, reason: "Uploaded CSV file is not valid UTF-8 text.")
+                }
+                csvString = str
+            } else if let rawData = multipart.data, !rawData.isEmpty {
+                csvString = rawData
+            } else {
+                throw Abort(.badRequest, reason: "No CSV file or content found in request.")
+            }
+        } else if let bodyBuffer = req.body.data, bodyBuffer.readableBytes > 0 {
+            guard let str = bodyBuffer.getString(at: 0, length: bodyBuffer.readableBytes) else {
+                throw Abort(.badRequest, reason: "Request body is not valid UTF-8 CSV text.")
+            }
+            csvString = str
+        } else {
+            throw Abort(.badRequest, reason: "Missing CSV payload. Please upload a CSV file or send CSV plain text.")
+        }
+
+        let trimmed = csvString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw Abort(.badRequest, reason: "Uploaded CSV file is empty.")
+        }
+
+        // Run pure-Swift CSV parser and database insertion
+        let receipt = try await CSVImportService.importFromCSV(
+            csvString: trimmed,
+            req: req
+        )
+
+        return receipt
+    }
+
     /// Patches an extracted receipt with manual edits/corrections, re-runs validation, and updates any active split session.
     @Sendable
     func patchReceipt(req: Request) async throws -> PatchReceiptResponse {

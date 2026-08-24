@@ -237,6 +237,46 @@ enum ReceiptService {
         return try JSONDecoder().decode(ExtractedReceiptResponse.self, from: data)
     }
 
+    /// Uploads an exported CSV file from external tools to the dedicated backend endpoint
+    /// to parse and insert the resulting expenses into the native scan schema.
+    /// - Parameters:
+    ///   - csvData: Raw CSV file byte data
+    ///   - filename: Name of the uploaded file
+    /// - Returns: The parsed and persisted ExtractedReceiptResponse
+    static func importCSV(csvData: Data, filename: String = "expenses.csv") async throws -> ExtractedReceiptResponse {
+        guard let url = URL(string: "\(baseURL)/import-csv") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+
+        let boundary = UUID().uuidString
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        var body = Data()
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: text/csv\r\n\r\n".data(using: .utf8)!)
+        body.append(csvData)
+        body.append("\r\n".data(using: .utf8)!)
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+
+        let (responseData, response) = try await URLSession.shared.upload(for: request, from: body)
+
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            let errorBody = String(data: responseData, encoding: .utf8) ?? ""
+            throw NSError(
+                domain: "ReceiptService",
+                code: (response as? HTTPURLResponse)?.statusCode ?? 0,
+                userInfo: [NSLocalizedDescriptionKey: "Failed to import CSV: \(errorBody)"]
+            )
+        }
+
+        let decoder = JSONDecoder()
+        return try decoder.decode(ExtractedReceiptResponse.self, from: responseData)
+    }
+
     /// Immediately PATCH-es receipt modifications to the Vapor backend for re-validation and link state updates.
     /// - Parameters:
     ///   - id: The receipt's UUID.

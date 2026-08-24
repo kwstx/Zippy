@@ -115,6 +115,8 @@ func routes(_ app: Application) throws {
             receipts.get("export", use: receiptController.export)
             receipts.post("upload", use: receiptController.upload)
             receipts.post("manual", use: receiptController.createManual)
+            receipts.post("import-csv", use: receiptController.importCSV)
+            receipts.post("import", use: receiptController.importCSV)
             receipts.post(":referenceId", "extract", use: receiptController.extract)
             receipts.get(":id", "result", use: receiptController.getResult)
             receipts.patch(":id", use: receiptController.patchReceipt)

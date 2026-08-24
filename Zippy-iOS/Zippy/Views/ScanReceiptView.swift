@@ -12,6 +12,7 @@ struct ScanReceiptView: View {
     @State private var showingHistory = false
     @State private var showingGroups = false
     @State private var showingManualEntry = false
+    @State private var showingImportCSV = false
     @State private var showingPaywall = false
     @State private var showingPrivacy = false
 
@@ -71,7 +72,7 @@ struct ScanReceiptView: View {
                         .padding(.horizontal, 40)
                     }
                                    } else {
-                    // Default state — scan or manual entry options
+                    // Default state — scan or manual/import options
                     VStack(spacing: 28) {
                         Button(action: {
                             showingImagePickerOptions = true
@@ -99,19 +100,36 @@ struct ScanReceiptView: View {
                         }
                         .padding(.horizontal, 60)
 
-                        Button(action: {
-                            showingManualEntry = true
-                        }) {
-                            HStack(spacing: 8) {
-                                Image(systemName: "square.and.pencil")
-                                    .font(.system(size: 13, design: .monospaced))
-                                Text("Manual entry / AI correction form")
-                                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                        VStack(spacing: 10) {
+                            Button(action: {
+                                showingImportCSV = true
+                            }) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "arrow.up.doc")
+                                        .font(.system(size: 13, design: .monospaced))
+                                    Text("Import from other tools (CSV)")
+                                        .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                }
+                                .foregroundColor(.black)
+                                .padding(.horizontal, 18)
+                                .padding(.vertical, 12)
+                                .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
                             }
-                            .foregroundColor(.black)
-                            .padding(.horizontal, 18)
-                            .padding(.vertical, 12)
-                            .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
+
+                            Button(action: {
+                                showingManualEntry = true
+                            }) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "square.and.pencil")
+                                        .font(.system(size: 13, design: .monospaced))
+                                    Text("Manual entry / AI correction form")
+                                        .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                }
+                                .foregroundColor(.black)
+                                .padding(.horizontal, 18)
+                                .padding(.vertical, 12)
+                                .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
+                            }
                         }
                     }
                 }
@@ -153,6 +171,9 @@ struct ScanReceiptView: View {
             }
             .sheet(isPresented: $showingGroups) {
                 GroupListView()
+            }
+            .sheet(isPresented: $showingImportCSV) {
+                ImportCSVView()
             }
             .sheet(isPresented: $showingPaywall) {
                 PaywallSheetView(subscriptionManager: subscriptionManager)
