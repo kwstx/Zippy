@@ -1,4 +1,6 @@
 import Vapor
+import Fluent
+import FluentPostgresDriver
 import Foundation
 
 // configures your application
@@ -25,6 +27,31 @@ public func configure(_ app: Application) async throws {
     
     // Store configuration in app.storage for easy access in controllers
     app.storage[ReceiptStorageKey.self] = storagePath
+    
+    // Configure PostgreSQL
+    if let databaseURL = Environment.get("DATABASE_URL") {
+        try app.databases.use(
+            .postgres(url: databaseURL),
+            as: .psql
+        )
+    } else {
+        app.databases.use(
+            .postgres(
+                hostname: Environment.get("DB_HOST") ?? "localhost",
+                port: Environment.get("DB_PORT").flatMap(Int.init) ?? 5432,
+                username: Environment.get("DB_USER") ?? "zippy",
+                password: Environment.get("DB_PASSWORD") ?? "zippy",
+                database: Environment.get("DB_NAME") ?? "zippy"
+            ),
+            as: .psql
+        )
+    }
+    
+    // Register migrations
+    app.migrations.add(CreateExtractedReceipt())
+    
+    // Auto-migrate in development
+    try await app.autoMigrate()
 
     // register routes
     try routes(app)

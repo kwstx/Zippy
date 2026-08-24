@@ -6,6 +6,8 @@ func routes(_ app: Application) throws {
     app.group("api") { api in
         api.group("receipts") { receipts in
             receipts.post("upload", use: receiptController.upload)
+            receipts.post(":referenceId", "extract", use: receiptController.extract)
+            receipts.get(":id", "result", use: receiptController.getResult)
         }
     }
 }

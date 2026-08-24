@@ -7,7 +7,9 @@ import Combine
 final class ScanReceiptViewModel: ObservableObject {
     @Published var selectedImage: UIImage?
     @Published var isUploading: Bool = false
+    @Published var isExtracting: Bool = false
     @Published var referenceId: String?
+    @Published var extractedReceipt: ExtractedReceiptResponse?
     @Published var errorMessage: String?
     
     /// Compresses the selected image on a background queue and initiates the upload.
@@ -17,6 +19,7 @@ final class ScanReceiptViewModel: ObservableObject {
         isUploading = true
         errorMessage = nil
         referenceId = nil
+        extractedReceipt = nil
         
         do {
             // Compress image on a background task
@@ -31,13 +34,33 @@ final class ScanReceiptViewModel: ObservableObject {
             let refId = try await ReceiptService.upload(imageData: compressedData)
             
             self.referenceId = refId
-            self.selectedImage = nil // Reset after success if desired
+            self.selectedImage = nil // Reset after success
             
         } catch {
             self.errorMessage = error.localizedDescription
         }
         
         isUploading = false
+    }
+    
+    /// Triggers AI extraction on the server for the uploaded receipt.
+    func extractReceipt() async {
+        guard let referenceId = referenceId else {
+            errorMessage = "No uploaded receipt to extract."
+            return
+        }
+        
+        isExtracting = true
+        errorMessage = nil
+        
+        do {
+            let receipt = try await ReceiptService.extractReceipt(referenceId: referenceId)
+            self.extractedReceipt = receipt
+        } catch {
+            self.errorMessage = "Extraction failed: \(error.localizedDescription)"
+        }
+        
+        isExtracting = false
     }
 }
 
