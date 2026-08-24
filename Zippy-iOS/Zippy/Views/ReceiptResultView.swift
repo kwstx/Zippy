@@ -7,6 +7,7 @@ struct ReceiptResultView: View {
     
     /// Controls whether shared items are split evenly or assigned manually.
     @State private var splitSharedEvenly: Bool = true
+    @State private var showingSplit: Bool = false
     
     var body: some View {
         ScrollView {
@@ -41,10 +42,17 @@ struct ReceiptResultView: View {
                 // Total
                 totalRow(label: "Total", amount: receipt.total)
                 thinDivider()
+                
+                // Split button
+                splitButton()
+                thinDivider()
             }
             .padding(.horizontal, 20)
         }
         .background(Color.black.ignoresSafeArea())
+        .navigationDestination(isPresented: $showingSplit) {
+            SplitView(receipt: receipt)
+        }
     }
     
     // MARK: - Row Components
@@ -139,6 +147,29 @@ struct ReceiptResultView: View {
         .padding(.vertical, 10)
     }
     
+    @ViewBuilder
+    private func splitButton() -> some View {
+        Button(action: {
+            showingSplit = true
+        }) {
+            HStack {
+                Image(systemName: "person.2")
+                    .font(.system(.body, design: .monospaced))
+                Text("Split this bill")
+                    .font(.system(.body, design: .monospaced))
+                    .fontWeight(.medium)
+            }
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .overlay(
+                RoundedRectangle(cornerRadius: 0)
+                    .stroke(Color(white: 0.3), lineWidth: 0.5)
+            )
+        }
+        .padding(.vertical, 16)
+    }
+
     @ViewBuilder
     private func thinDivider() -> some View {
         Rectangle()

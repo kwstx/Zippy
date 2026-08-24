@@ -2,6 +2,48 @@
 
 import Foundation
 
+/// Response from the server after finalizing a split session.
+struct SplitSessionResponse: Decodable {
+    let id: UUID
+    let receiptId: UUID
+    let participants: [SplitParticipantDTO]
+    let balances: [SplitBalanceDTO]
+    let receiptTotal: Double
+    let shareableURL: String?
+    let createdAt: String?
+
+    struct SplitParticipantDTO: Decodable {
+        let id: UUID
+        let name: String
+    }
+
+    struct SplitBalanceDTO: Decodable, Identifiable {
+        var id: UUID { participantId }
+        let participantId: UUID
+        let name: String
+        let itemsSubtotal: Double
+        let taxShare: Double
+        let tipShare: Double
+        let total: Double
+    }
+}
+
+extension SplitSessionResponse {
+    /// Converts server balance DTOs to the app's PersonBalance model.
+    var appBalances: [PersonBalance] {
+        balances.map {
+            PersonBalance(
+                participantId: $0.participantId,
+                name: $0.name,
+                itemsSubtotal: $0.itemsSubtotal,
+                taxShare: $0.taxShare,
+                tipShare: $0.tipShare,
+                total: $0.total
+            )
+        }
+    }
+}
+
 /// Defines the response structure expected from the backend
 struct UploadResponse: Decodable {
     let referenceId: String
@@ -76,5 +118,76 @@ enum ReceiptService {
         let decoder = JSONDecoder()
         let receipt = try decoder.decode(ExtractedReceiptResponse.self, from: data)
         return receipt
+    }
+
+    /// Sends split data to the server for authoritative computation and persistence.
+    /// - Parameters:
+    ///   - receiptId: The database UUID of the extracted receipt.
+    ///   - participants: The people splitting the bill.
+    ///   - assignments: Item index (as string) → array of participant UUIDs.
+    /// - Returns: The server-computed split session response.
+    static func finalizeSplit(
+        receiptId: UUID,
+        participants: [Participant],
+        assignments: [String: [UUID]]
+    ) async throws -> SplitSessionResponse {
+        guard let url = URL(string: "http://localhost:8080/api/splits") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        struct CreateSplitRequest: Encodable {
+            let receiptId: UUID
+            let participants: [ParticipantPayload]
+            let assignments: [String: [UUID]]
+
+            struct ParticipantPayload: Encodable {
+                let id: UUID
+                let name: String
+            }
+        }
+
+        let payload = CreateSplitRequest(
+            receiptId: receiptId,
+            participants: participants.map { .init(id: $0.id, name: $0.name) },
+            assignments: assignments
+        )
+
+        request.httpBody = try JSONEncoder().encode(payload)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            let body = String(data: data, encoding: .utf8) ?? ""
+            throw NSError(
+                domain: "ReceiptService",
+                code: (response as? HTTPURLResponse)?.statusCode ?? 0,
+                userInfo: [NSLocalizedDescriptionKey: "Split finalization failed: \(body)"]
+            )
+        }
+
+        return try JSONDecoder().decode(SplitSessionResponse.self, from: data)
+    }
+
+    /// Fetches a previously finalized split session by its ID (for shareable links).
+    /// - Parameter sessionId: The UUID of the split session.
+    /// - Returns: The split session data.
+    static func getSplit(sessionId: UUID) async throws -> SplitSessionResponse {
+        guard let url = URL(string: "http://localhost:8080/api/splits/\(sessionId)") else {
+            throw URLError(.badURL)
+        }
+
+        let (data, response) = try await URLSession.shared.data(for: URLRequest(url: url))
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+
+        return try JSONDecoder().decode(SplitSessionResponse.self, from: data)
     }
 }
