@@ -16,4 +16,7 @@ func routes(_ app: Application) throws {
             splits.get(":id", use: splitController.get)
         }
     }
+    
+    // Short URL shareable link endpoint
+    app.get("s", ":token", use: splitController.getByToken)
 }

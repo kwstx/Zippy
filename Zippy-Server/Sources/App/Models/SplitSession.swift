@@ -24,6 +24,10 @@ final class SplitSession: Model, Content, @unchecked Sendable {
     @Field(key: "balances")
     var balances: [PersonBalanceDTO]
 
+    /// Cryptographically random token for the shareable short link.
+    @OptionalField(key: "share_token")
+    var shareToken: String?
+
     @Timestamp(key: "created_at", on: .create)
     var createdAt: Date?
 
@@ -37,12 +41,14 @@ final class SplitSession: Model, Content, @unchecked Sendable {
         receiptId: UUID,
         participants: [ParticipantDTO],
         assignments: [String: [UUID]],
-        balances: [PersonBalanceDTO]
+        balances: [PersonBalanceDTO],
+        shareToken: String? = nil
     ) {
         self.id = id
         self.receiptId = receiptId
         self.participants = participants
         self.assignments = assignments
         self.balances = balances
+        self.shareToken = shareToken
     }
 }

@@ -190,4 +190,22 @@ enum ReceiptService {
 
         return try JSONDecoder().decode(SplitSessionResponse.self, from: data)
     }
+
+    /// Fetches a previously finalized split session by its short share token.
+    /// - Parameter token: The cryptographically random share token.
+    /// - Returns: The split session data.
+    static func getSplitByToken(token: String) async throws -> SplitSessionResponse {
+        guard let url = URL(string: "http://localhost:8080/s/\(token)") else {
+            throw URLError(.badURL)
+        }
+
+        let (data, response) = try await URLSession.shared.data(for: URLRequest(url: url))
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+
+        return try JSONDecoder().decode(SplitSessionResponse.self, from: data)
+    }
 }

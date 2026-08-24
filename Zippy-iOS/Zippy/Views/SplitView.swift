@@ -8,6 +8,7 @@ struct SplitView: View {
     @State private var newParticipantName: String = ""
     @State private var selectedItemIndex: Int?
     @State private var showingAddParticipant: Bool = false
+    @State private var isLinkCopied: Bool = false
     @FocusState private var isNameFieldFocused: Bool
 
     init(receipt: ExtractedReceiptResponse) {
@@ -292,14 +293,36 @@ struct SplitView: View {
                     .tint(.white)
                     .padding(.vertical, 20)
             } else if let url = viewModel.shareableURL {
-                VStack(spacing: 8) {
-                    Image(systemName: "checkmark.circle")
-                        .font(.system(size: 32))
-                        .foregroundColor(.white)
-                    Text("Saved & shareable")
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundColor(Color(white: 0.5))
+                VStack(spacing: 16) {
+                    Text(url)
+                        .font(.system(.body, design: .monospaced))
+                        .foregroundColor(.black)
+                        .multilineTextAlignment(.center)
+                        .textSelection(.enabled)
+
+                    Button(action: {
+                        UIPasteboard.general.string = url
+                        isLinkCopied = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                            isLinkCopied = false
+                        }
+                    }) {
+                        Text(isLinkCopied ? "Copied" : "Copy")
+                            .font(.system(.body, design: .monospaced))
+                            .fontWeight(.medium)
+                            .foregroundColor(.black)
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 8)
+                            .overlay(
+                                Rectangle()
+                                    .stroke(Color.black, lineWidth: 0.5)
+                            )
+                    }
                 }
+                .padding(.vertical, 24)
+                .padding(.horizontal, 16)
+                .frame(maxWidth: .infinity)
+                .background(Color.white)
                 .padding(.vertical, 20)
             } else {
                 Button(action: {
