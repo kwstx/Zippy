@@ -9,7 +9,64 @@ func routes(_ app: Application) throws {
     let subscriptionController = SubscriptionController()
     let privacyController = PrivacyController()
     let authController = AuthController()
+    let openAPIController = OpenAPIController()
+    let agentV1Controller = AgentV1Controller()
     
+    // =========================================================================
+    // MARK: - PUBLIC OPENAPI SPECIFICATION & DOCUMENTATION
+    // =========================================================================
+    app.get("openapi.json", use: openAPIController.getSpecJSON)
+    app.get("openapi.yaml", use: openAPIController.getSpecYAML)
+    app.get("docs", use: openAPIController.getDocsHTML)
+    
+    // =========================================================================
+    // MARK: - VERSIONED AGENT & REST API (v1)
+    // Exposed for autonomous AI agents, LLM tool-calling, and external integrations.
+    // Documented with OpenAPI 3.1.0. Note: The native Swift iOS client never consumes
+    // these public routes, keeping its UI purely focused on human interaction.
+    // =========================================================================
+    let v1 = app.grouped("api", "v1").grouped(AgentAuthMiddleware())
+    
+    // OpenAPI & Discovery
+    v1.get("openapi.json", use: openAPIController.getSpecJSON)
+    v1.get("openapi.yaml", use: openAPIController.getSpecYAML)
+    v1.get("docs", use: openAPIController.getDocsHTML)
+    v1.get("health", use: agentV1Controller.health)
+    
+    // AI Agent Tool Protocols & Manifests
+    v1.group("agent") { agent in
+        agent.get("tools", use: openAPIController.getAgentTools)
+        agent.get("manifest.json", use: openAPIController.getAIManifest)
+        agent.post("execute", use: agentV1Controller.executeTool)
+    }
+    
+    // Agent Splits & Calculation
+    v1.group("splits") { splits in
+        splits.post("calculate", use: agentV1Controller.calculateSplitStateless)
+        splits.post(use: agentV1Controller.createSplit)
+        splits.get(":id", use: agentV1Controller.getSplit)
+        splits.post(":token", "simplify", use: agentV1Controller.simplifySplitDebts)
+    }
+    
+    // Agent Receipt Ingestion & Parsing
+    v1.group("receipts") { receipts in
+        receipts.post("parse", use: agentV1Controller.parseReceipt)
+    }
+    
+    // Agent Group Ledger Management
+    v1.group("groups") { groups in
+        groups.get(":id", "ledger", use: agentV1Controller.getGroupLedger)
+        groups.post(":id", "expenses", use: agentV1Controller.addGroupExpense)
+        groups.post(":id", "settlements", use: agentV1Controller.addGroupSettlement)
+    }
+    
+    // Agent Live Foreign Exchange Rates
+    v1.get("rates", use: agentV1Controller.getRates)
+
+    // =========================================================================
+    // MARK: - CLIENT HUMAN INTERFACE API
+    // Dedicated endpoints consumed directly by the Swift iOS application.
+    // =========================================================================
     app.group("api") { api in
         api.group("auth") { auth in
             auth.post("apple", use: authController.signInWithApple)
@@ -120,7 +177,9 @@ func routes(_ app: Application) throws {
         }
     }
     
-    // Short URL shareable guest endpoints (unauthenticated web access)
+    // =========================================================================
+    // MARK: - SHORT URL SHAREABLE GUEST ENDPOINTS (Web Guest Access)
+    // =========================================================================
     app.group("s", ":token") { guest in
         guest.get(use: splitController.getByToken)
         guest.get("view", use: splitController.viewGuestHTML)
@@ -138,5 +197,6 @@ func routes(_ app: Application) throws {
     // Direct standalone public route for Simplified Payments
     app.get("simplified-payments", use: splitController.viewSimplifiedPaymentsStandalone)
 }
+
 
 
