@@ -9,6 +9,7 @@ struct ScanReceiptView: View {
     @State private var showingPhotoLibrary = false
     @State private var showingResult = false
     @State private var showingHistory = false
+    @State private var showingGroups = false
 
     var body: some View {
         NavigationStack {
@@ -120,7 +121,21 @@ struct ScanReceiptView: View {
             .sheet(isPresented: $showingHistory) {
                 HistoryView()
             }
+            .sheet(isPresented: $showingGroups) {
+                GroupListView()
+            }
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: { showingGroups = true }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "person.2")
+                                .font(.system(size: 13, design: .monospaced))
+                            Text("Groups")
+                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        }
+                        .foregroundColor(.black)
+                    }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: { showingHistory = true }) {
                         HStack(spacing: 4) {

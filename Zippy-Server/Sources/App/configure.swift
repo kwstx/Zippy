@@ -51,6 +51,8 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(CreateExtractedReceipt())
     app.migrations.add(CreateSplitSession())
     app.migrations.add(AddCategoryMigration())
+    app.migrations.add(CreatePersistentGroupMigration())
+    app.migrations.add(CreateLedgerEventMigration())
     
     // Auto-migrate in development
     try await app.autoMigrate()

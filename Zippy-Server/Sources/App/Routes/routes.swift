@@ -3,8 +3,20 @@ import Vapor
 func routes(_ app: Application) throws {
     let receiptController = ReceiptController()
     let splitController = SplitController()
+    let groupController = GroupController()
     
     app.group("api") { api in
+        api.group("groups") { groups in
+            groups.get(use: groupController.list)
+            groups.post(use: groupController.create)
+            groups.get(":id", use: groupController.get)
+            groups.get(":id", "history", use: groupController.getHistory)
+            groups.get(":id", "ledger", use: groupController.getHistory)
+            groups.post(":id", "expenses", use: groupController.addExpense)
+            groups.post(":id", "settlements", use: groupController.addSettlement)
+            groups.delete(":id", use: groupController.delete)
+        }
+        
         api.group("receipts") { receipts in
             receipts.get(use: receiptController.list)
             receipts.post("upload", use: receiptController.upload)
