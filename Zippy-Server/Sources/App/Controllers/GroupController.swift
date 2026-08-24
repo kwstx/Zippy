@@ -7,7 +7,23 @@ struct GroupController {
     /// Lists all persistent groups with their calculated running balances.
     @Sendable
     func list(req: Request) async throws -> [GroupResponseDTO] {
-        let groups = try await PersistentGroup.query(on: req.db)
+        var resolvedUserId: String? = req.headers.first(name: "X-User-Id") ?? req.headers.first(name: "X-Device-Id")
+        if let bearer = req.headers.bearerAuthorization?.token {
+            if let user = try await UserAccount.query(on: req.db).filter(\.$sessionToken == bearer).first() {
+                resolvedUserId = user.id?.uuidString
+            }
+        } else if let sessionToken = req.headers.first(name: "X-Session-Token") {
+            if let user = try await UserAccount.query(on: req.db).filter(\.$sessionToken == sessionToken).first() {
+                resolvedUserId = user.id?.uuidString
+            }
+        }
+
+        var groupQuery = PersistentGroup.query(on: req.db)
+        if let userId = resolvedUserId, (try? req.query.get(Bool.self, at: "onlyOwned")) == true {
+            groupQuery = groupQuery.filter(\.$ownerId == userId)
+        }
+
+        let groups = try await groupQuery
             .sort(\.$createdAt, .desc)
             .all()
 
@@ -38,6 +54,7 @@ struct GroupController {
                 currency: groupCurrency,
                 memberCount: group.members.count,
                 eventCount: events.count,
+                ownerId: group.ownerId,
                 lastActivity: lastActivity,
                 createdAt: group.createdAt
             ))
@@ -56,10 +73,24 @@ struct GroupController {
             throw Abort(.badRequest, reason: "Group name cannot be empty.")
         }
 
+        // Determine organizer owner ID from authentication or headers
+        var ownerId: String? = input.ownerId
+        if ownerId == nil {
+            if let bearer = req.headers.bearerAuthorization?.token,
+               let user = try await UserAccount.query(on: req.db).filter(\.$sessionToken == bearer).first() {
+                ownerId = user.id?.uuidString
+            } else if let sessionToken = req.headers.first(name: "X-Session-Token"),
+                      let user = try await UserAccount.query(on: req.db).filter(\.$sessionToken == sessionToken).first() {
+                ownerId = user.id?.uuidString
+            } else if let headerUserId = req.headers.first(name: "X-User-Id") {
+                ownerId = headerUserId
+            }
+        }
+
         // Check subscription tier group limits
-        let userId = req.headers.first(name: "X-User-Id") ?? req.headers.first(name: "X-Device-Id") ?? "default_user"
+        let effectiveUserId = ownerId ?? req.headers.first(name: "X-Device-Id") ?? "default_user"
         let groupCount = try await PersistentGroup.query(on: req.db).count()
-        let canCreate = try await SubscriptionService.canCreateGroup(userId: userId, currentGroupCount: groupCount, on: req.db)
+        let canCreate = try await SubscriptionService.canCreateGroup(userId: effectiveUserId, currentGroupCount: groupCount, on: req.db)
         guard canCreate else {
             throw Abort(.forbidden, reason: "Free tier is limited to 2 groups. Upgrade to Pro for unlimited groups.")
         }
@@ -75,7 +106,8 @@ struct GroupController {
         let newGroup = PersistentGroup(
             name: trimmedName,
             members: members,
-            currency: baseCurrency
+            currency: baseCurrency,
+            ownerId: ownerId
         )
         try await newGroup.save(on: req.db)
 
@@ -83,7 +115,7 @@ struct GroupController {
             throw Abort(.internalServerError, reason: "Failed to persist group.")
         }
 
-        req.logger.info("Created persistent group '\(newGroup.name)' (\(baseCurrency)) with ID: \(groupId)")
+        req.logger.info("Created persistent group '\(newGroup.name)' (\(baseCurrency)) with ID: \(groupId) (owner: \(ownerId ?? "none"))")
 
         return GroupResponseDTO(
             id: groupId,
@@ -94,6 +126,7 @@ struct GroupController {
             currency: baseCurrency,
             memberCount: newGroup.members.count,
             eventCount: 0,
+            ownerId: newGroup.ownerId,
             lastActivity: newGroup.createdAt,
             createdAt: newGroup.createdAt
         )
@@ -133,6 +166,7 @@ struct GroupController {
             currency: groupCurrency,
             memberCount: group.members.count,
             eventCount: events.count,
+            ownerId: group.ownerId,
             lastActivity: lastActivity,
             createdAt: group.createdAt
         )

@@ -12,11 +12,12 @@ struct PersistentGroup: Identifiable, Codable, Equatable, Hashable {
     var currency: String
     var memberCount: Int
     var eventCount: Int
+    var ownerId: String?
     var lastActivity: Date?
     var createdAt: Date?
 
     enum CodingKeys: String, CodingKey {
-        case id, name, members, runningBalance, formattedBalance, currency, memberCount, eventCount, lastActivity, createdAt
+        case id, name, members, runningBalance, formattedBalance, currency, memberCount, eventCount, ownerId, lastActivity, createdAt
     }
 
     init(
@@ -28,6 +29,7 @@ struct PersistentGroup: Identifiable, Codable, Equatable, Hashable {
         currency: String = "USD",
         memberCount: Int = 0,
         eventCount: Int = 0,
+        ownerId: String? = nil,
         lastActivity: Date? = nil,
         createdAt: Date? = nil
     ) {
@@ -39,6 +41,7 @@ struct PersistentGroup: Identifiable, Codable, Equatable, Hashable {
         self.currency = currency
         self.memberCount = memberCount.max(members.count)
         self.eventCount = eventCount
+        self.ownerId = ownerId
         self.lastActivity = lastActivity
         self.createdAt = createdAt
     }
@@ -54,6 +57,7 @@ struct PersistentGroup: Identifiable, Codable, Equatable, Hashable {
         let count = try container.decode(Int.self, forKey: .memberCount)
         memberCount = count.max(members.count)
         eventCount = try container.decode(Int.self, forKey: .eventCount)
+        ownerId = try container.decodeIfPresent(String.self, forKey: .ownerId)
         lastActivity = try container.decodeIfPresent(Date.self, forKey: .lastActivity)
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt)
     }
@@ -184,6 +188,7 @@ struct CreateGroupPayload: Encodable {
     let name: String
     let members: [ParticipantPayload]
     let currency: String?
+    let ownerId: String?
 
     struct ParticipantPayload: Encodable {
         let id: UUID

@@ -8,8 +8,10 @@ import SwiftUI
 struct GroupListView: View {
     @StateObject private var viewModel = GroupListViewModel()
     @ObservedObject private var subscriptionManager = SubscriptionManager.shared
+    @ObservedObject private var authService = AuthService.shared
     @State private var showingCreateGroupSheet = false
     @State private var showingPaywall = false
+    @State private var showingAccountSheet = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -93,29 +95,51 @@ struct GroupListView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") {
-                        dismiss()
+                    HStack(spacing: 12) {
+                        Button("Close") {
+                            dismiss()
+                        }
+                        .font(.system(size: 14, design: .monospaced))
+                        .foregroundColor(.black)
+
+                        // Minimal black-and-white account badge (shown only when signed in)
+                        AccountBadgeView()
                     }
-                    .font(.system(size: 14, design: .monospaced))
-                    .foregroundColor(.black)
                 }
 
                 ToolbarItem(placement: .primaryAction) {
-                    Button(action: {
-                        if !subscriptionManager.isPro && viewModel.groups.count >= (subscriptionManager.limits?.maxGroups ?? 2) {
-                            showingPaywall = true
-                        } else {
-                            showingCreateGroupSheet = true
+                    HStack(spacing: 14) {
+                        if !authService.isAuthenticated {
+                            Button(action: { showingAccountSheet = true }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "person.crop.circle")
+                                        .font(.system(size: 13, design: .monospaced))
+                                    Text("Account")
+                                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                }
+                                .foregroundColor(.black)
+                            }
                         }
-                    }) {
-                        Image(systemName: "plus")
-                            .font(.system(size: 14, weight: .bold, design: .monospaced))
-                            .foregroundColor(.black)
+
+                        Button(action: {
+                            if !subscriptionManager.isPro && viewModel.groups.count >= (subscriptionManager.limits?.maxGroups ?? 2) {
+                                showingPaywall = true
+                            } else {
+                                showingCreateGroupSheet = true
+                            }
+                        }) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 14, weight: .bold, design: .monospaced))
+                                .foregroundColor(.black)
+                        }
                     }
                 }
             }
             .sheet(isPresented: $showingPaywall) {
                 PaywallSheetView(subscriptionManager: subscriptionManager)
+            }
+            .sheet(isPresented: $showingAccountSheet) {
+                OrganizerAccountSheet()
             }
             .sheet(isPresented: $showingCreateGroupSheet) {
                 CreateGroupSheet { name, members, currency in

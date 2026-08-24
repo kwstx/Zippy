@@ -8,8 +8,19 @@ func routes(_ app: Application) throws {
     let recurringController = RecurringExpenseController()
     let subscriptionController = SubscriptionController()
     let privacyController = PrivacyController()
+    let authController = AuthController()
     
     app.group("api") { api in
+        api.group("auth") { auth in
+            auth.post("apple", use: authController.signInWithApple)
+            auth.post("magic-link", "request", use: authController.requestMagicLink)
+            auth.post("magic-link", "verify", use: authController.verifyMagicLink)
+            auth.get("magic-link", "verify", use: authController.verifyMagicLink)
+            auth.get("me", use: authController.getMe)
+            auth.post("claim-groups", use: authController.claimGroups)
+            auth.post("signout", use: authController.signOut)
+        }
+        
         api.group("subscription") { sub in
             sub.get("status", use: subscriptionController.getStatus)
             sub.get("status", ":userId", use: subscriptionController.getStatusForUser)

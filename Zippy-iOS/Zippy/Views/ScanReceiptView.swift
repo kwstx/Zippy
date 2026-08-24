@@ -165,14 +165,19 @@ struct ScanReceiptView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: { showingGroups = true }) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "person.2")
-                                .font(.system(size: 13, design: .monospaced))
-                            Text("Groups")
-                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    HStack(spacing: 8) {
+                        Button(action: { showingGroups = true }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "person.2")
+                                    .font(.system(size: 13, design: .monospaced))
+                                Text("Groups")
+                                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                            }
+                            .foregroundColor(.black)
                         }
-                        .foregroundColor(.black)
+
+                        // Minimal black-and-white account badge (shown only when signed in)
+                        AccountBadgeView()
                     }
                 }
                 ToolbarItem(placement: .principal) {

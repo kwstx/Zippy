@@ -19,6 +19,7 @@ enum GroupService {
     }
 
     /// Fetches all persistent groups with calculated running balances.
+    @MainActor
     static func fetchGroups() async throws -> [PersistentGroup] {
         guard let url = URL(string: baseURL) else {
             throw URLError(.badURL)
@@ -27,6 +28,9 @@ enum GroupService {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        for (key, value) in AuthService.shared.authHeaders {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
@@ -37,6 +41,7 @@ enum GroupService {
     }
 
     /// Creates a new persistent group with an initial roster of participants and base currency.
+    @MainActor
     static func createGroup(name: String, members: [Participant], currency: String = "USD") async throws -> PersistentGroup {
         guard let url = URL(string: baseURL) else {
             throw URLError(.badURL)
@@ -45,11 +50,16 @@ enum GroupService {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        for (key, value) in AuthService.shared.authHeaders {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
 
+        let ownerId = AuthService.shared.currentUser?.id.uuidString
         let payload = CreateGroupPayload(
             name: name,
             members: members.map { .init(id: $0.id, name: $0.name) },
-            currency: currency
+            currency: currency,
+            ownerId: ownerId
         )
         request.httpBody = try jsonEncoder.encode(payload)
 
@@ -59,7 +69,13 @@ enum GroupService {
             throw NSError(domain: "GroupService", code: (response as? HTTPURLResponse)?.statusCode ?? 0, userInfo: [NSLocalizedDescriptionKey: errorText])
         }
 
-        return try jsonDecoder.decode(PersistentGroup.self, from: data)
+        let group = try jsonDecoder.decode(PersistentGroup.self, from: data)
+        if AuthService.shared.isAuthenticated {
+            Task {
+                await AuthService.shared.refreshProfile()
+            }
+        }
+        return group
     }
 
     /// Loads the complete append-only event stream history and member balances from the backend ledger tables.

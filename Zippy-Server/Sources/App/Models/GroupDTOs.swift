@@ -29,15 +29,18 @@ public struct CreateGroupRequest: Content {
     public let name: String
     public let members: [ParticipantDTO]
     public let currency: String?
+    public let ownerId: String?
 
     public init(
         name: String,
         members: [ParticipantDTO],
-        currency: String? = "USD"
+        currency: String? = "USD",
+        ownerId: String? = nil
     ) {
         self.name = name
         self.members = members
         self.currency = currency ?? "USD"
+        self.ownerId = ownerId
     }
 }
 
@@ -114,6 +117,7 @@ public struct GroupResponseDTO: Content {
     public let currency: String
     public let memberCount: Int
     public let eventCount: Int
+    public let ownerId: String?
     public let lastActivity: Date?
     public let createdAt: Date?
 
@@ -126,6 +130,7 @@ public struct GroupResponseDTO: Content {
         currency: String = "USD",
         memberCount: Int,
         eventCount: Int,
+        ownerId: String? = nil,
         lastActivity: Date? = nil,
         createdAt: Date? = nil
     ) {
@@ -137,6 +142,7 @@ public struct GroupResponseDTO: Content {
         self.currency = currency
         self.memberCount = memberCount
         self.eventCount = eventCount
+        self.ownerId = ownerId
         self.lastActivity = lastActivity
         self.createdAt = createdAt
     }

@@ -21,6 +21,10 @@ final class PersistentGroup: Model, Content, @unchecked Sendable {
     @OptionalField(key: "currency")
     var currency: String?
 
+    /// User/Organizer account ID that owns this group.
+    @OptionalField(key: "owner_id")
+    var ownerId: String?
+
     @Timestamp(key: "created_at", on: .create)
     var createdAt: Date?
 
@@ -33,11 +37,13 @@ final class PersistentGroup: Model, Content, @unchecked Sendable {
         id: UUID? = nil,
         name: String,
         members: [ParticipantDTO],
-        currency: String? = "USD"
+        currency: String? = "USD",
+        ownerId: String? = nil
     ) {
         self.id = id
         self.name = name
         self.members = members
         self.currency = currency ?? "USD"
+        self.ownerId = ownerId
     }
 }

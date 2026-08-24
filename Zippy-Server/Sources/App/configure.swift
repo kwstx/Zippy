@@ -58,6 +58,8 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(CreatePaymentReminderLogMigration())
     app.migrations.add(CreateRecurringExpenseTemplateMigration())
     app.migrations.add(CreateSubscriptionRecordMigration())
+    app.migrations.add(CreateUserAccountMigration())
+    app.migrations.add(AddOrganizerToGroupsMigration())
     
     // Auto-migrate in development
     try await app.autoMigrate()
