@@ -54,11 +54,11 @@ final class SubscriptionManager: ObservableObject {
 
     // MARK: - StoreKit 2 Transaction Listener
     private func listenForTransactions() -> Task<Void, Never> {
-        Task.detached {
+        Task.detached { [weak self] in
             for await result in StoreKit.Transaction.updates {
                 do {
-                    let transaction = try self.checkVerified(result)
-                    await self.handleVerifiedTransaction(transaction)
+                    let transaction = try Self.checkVerified(result)
+                    await self?.handleVerifiedTransaction(transaction)
                     await transaction.finish()
                 } catch {
                     print("[StoreKit] Transaction verification failed: \(error)")
@@ -91,7 +91,7 @@ final class SubscriptionManager: ObservableObject {
 
                 switch result {
                 case .success(let verification):
-                    let transaction = try checkVerified(verification)
+                    let transaction = try Self.checkVerified(verification)
                     await handleVerifiedTransaction(transaction)
                     await transaction.finish()
                     self.showPaywall = false
@@ -155,7 +155,7 @@ final class SubscriptionManager: ObservableObject {
     }
 
     /// Verifies transaction signature cryptographically via StoreKit 2.
-    private func checkVerified<T>(_ result: VerificationResult<T>) throws -> T {
+    nonisolated private static func checkVerified<T>(_ result: VerificationResult<T>) throws -> T {
         switch result {
         case .unverified(_, let error):
             throw error
@@ -183,7 +183,7 @@ final class SubscriptionManager: ObservableObject {
         do {
             try await AppStore.sync()
             for await result in StoreKit.Transaction.currentEntitlements {
-                if let transaction = try? checkVerified(result) {
+                if let transaction = try? Self.checkVerified(result) {
                     await handleVerifiedTransaction(transaction)
                 }
             }

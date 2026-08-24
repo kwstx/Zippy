@@ -5,35 +5,44 @@ import SwiftUI
 public struct CurrencyItem: Identifiable, Hashable {
     public let code: String
     public let name: String
+    public let symbol: String
     public var id: String { code }
 
-    public init(code: String, name: String) {
+    public init(code: String, name: String, symbol: String) {
         self.code = code.uppercased()
         self.name = name
+        self.symbol = symbol
     }
 }
 
 public enum CurrencyRateService {
-    /// Comprehensive list of standard ISO 4217 currencies supported in Zippy.
-    public static let supportedCurrencies: [CurrencyItem] = [
-        CurrencyItem(code: "USD", name: "US Dollar"),
-        CurrencyItem(code: "EUR", name: "Euro"),
-        CurrencyItem(code: "GBP", name: "British Pound"),
-        CurrencyItem(code: "CAD", name: "Canadian Dollar"),
-        CurrencyItem(code: "JPY", name: "Japanese Yen"),
-        CurrencyItem(code: "AUD", name: "Australian Dollar"),
-        CurrencyItem(code: "CHF", name: "Swiss Franc"),
-        CurrencyItem(code: "CNY", name: "Chinese Yuan"),
-        CurrencyItem(code: "INR", name: "Indian Rupee"),
-        CurrencyItem(code: "MXN", name: "Mexican Peso"),
-        CurrencyItem(code: "BRL", name: "Brazilian Real"),
-        CurrencyItem(code: "SGD", name: "Singapore Dollar"),
-        CurrencyItem(code: "HKD", name: "Hong Kong Dollar"),
-        CurrencyItem(code: "NZD", name: "New Zealand Dollar"),
-        CurrencyItem(code: "SEK", name: "Swedish Krona"),
-        CurrencyItem(code: "NOK", name: "Norwegian Krone"),
-        CurrencyItem(code: "DKK", name: "Danish Krone"),
-        CurrencyItem(code: "KRW", name: "South Korean Won")
+    /// Comprehensive list of standard ISO 4217 currency codes supported in Zippy.
+    public static let supportedCurrencies: [String] = [
+        "USD", "EUR", "GBP", "CAD", "JPY", "AUD", "CHF", "CNY",
+        "INR", "MXN", "BRL", "SGD", "HKD", "NZD", "SEK", "NOK",
+        "DKK", "KRW"
+    ]
+
+    /// Currency metadata catalog.
+    public static let currencyItems: [CurrencyItem] = [
+        CurrencyItem(code: "USD", name: "US Dollar", symbol: "$"),
+        CurrencyItem(code: "EUR", name: "Euro", symbol: "€"),
+        CurrencyItem(code: "GBP", name: "British Pound", symbol: "£"),
+        CurrencyItem(code: "CAD", name: "Canadian Dollar", symbol: "$"),
+        CurrencyItem(code: "JPY", name: "Japanese Yen", symbol: "¥"),
+        CurrencyItem(code: "AUD", name: "Australian Dollar", symbol: "$"),
+        CurrencyItem(code: "CHF", name: "Swiss Franc", symbol: "CHF"),
+        CurrencyItem(code: "CNY", name: "Chinese Yuan", symbol: "¥"),
+        CurrencyItem(code: "INR", name: "Indian Rupee", symbol: "₹"),
+        CurrencyItem(code: "MXN", name: "Mexican Peso", symbol: "$"),
+        CurrencyItem(code: "BRL", name: "Brazilian Real", symbol: "R$"),
+        CurrencyItem(code: "SGD", name: "Singapore Dollar", symbol: "$"),
+        CurrencyItem(code: "HKD", name: "Hong Kong Dollar", symbol: "$"),
+        CurrencyItem(code: "NZD", name: "New Zealand Dollar", symbol: "$"),
+        CurrencyItem(code: "SEK", name: "Swedish Krona", symbol: "kr"),
+        CurrencyItem(code: "NOK", name: "Norwegian Krone", symbol: "kr"),
+        CurrencyItem(code: "DKK", name: "Danish Krone", symbol: "kr"),
+        CurrencyItem(code: "KRW", name: "South Korean Won", symbol: "₩")
     ]
 
     /// Default baseline rates relative to USD (1 USD = X).
@@ -87,9 +96,15 @@ public enum CurrencyRateService {
         return (converted, rate)
     }
 
+    /// Returns display symbol for a currency code.
+    public static func symbol(for code: String) -> String {
+        let normalized = code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        return currencyItems.first(where: { $0.code == normalized })?.symbol ?? normalized
+    }
+
     /// Returns display name for a currency code.
     public static func name(for code: String) -> String {
-        let normalized = code.uppercased()
-        return supportedCurrencies.first(where: { $0.code == normalized })?.name ?? normalized
+        let normalized = code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        return currencyItems.first(where: { $0.code == normalized })?.name ?? normalized
     }
 }

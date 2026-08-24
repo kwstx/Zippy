@@ -2,6 +2,10 @@
 
 import SwiftUI
 
+extension Int: @retroactive Identifiable {
+    public var id: Int { self }
+}
+
 /// Full-screen bill-splitting view with flexible split methods (Equal, Itemized, Percentage, Shares, Exact),
 /// instant client-side calculation, backend synchronization, and in-place monochrome totals refresh.
 struct SplitView: View {

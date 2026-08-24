@@ -67,7 +67,7 @@ struct RecordSettlementSheet: View {
                                 .font(.system(size: 14, weight: .bold, design: .monospaced))
                                 .foregroundColor(.black)
 
-                            Text(CurrencyRateService.symbol(for: currency))
+                            Text(CurrencyRateService.name(for: currency))
                                 .font(.system(size: 13, weight: .light, design: .monospaced))
                                 .foregroundColor(Color(white: 0.5))
                         }
