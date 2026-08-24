@@ -28,23 +28,37 @@ struct SplitSessionResponse: Decodable {
         let isPaid: Bool?
         let paidAt: Date?
         let paymentMethod: String?
+        let settlementStatus: SettlementStatus?
     }
+}
+
+/// Response returned when selecting an external payment method.
+struct SelectPaymentMethodResponse: Decodable {
+    let success: Bool
+    let participantId: UUID
+    let paymentMethod: String
+    let settlementStatus: SettlementStatus
+    let deepLink: String?
+    let instructions: String?
+    let message: String
 }
 
 extension SplitSessionResponse {
     /// Converts server balance DTOs to the app's PersonBalance model.
     var appBalances: [PersonBalance] {
         balances.map {
-            PersonBalance(
+            let status = $0.settlementStatus ?? ($0.isPaid == true ? .settled : ($0.paymentMethod != nil ? .pendingConfirmation : .unpaid))
+            return PersonBalance(
                 participantId: $0.participantId,
                 name: $0.name,
                 itemsSubtotal: $0.itemsSubtotal,
                 taxShare: $0.taxShare,
                 tipShare: $0.tipShare,
                 total: $0.total,
-                isPaid: $0.isPaid ?? false,
+                isPaid: $0.isPaid ?? (status == .settled),
                 paidAt: $0.paidAt,
-                paymentMethod: $0.paymentMethod
+                paymentMethod: $0.paymentMethod,
+                settlementStatus: status
             )
         }
     }
@@ -177,6 +191,63 @@ enum ReceiptService {
         }
 
         return try JSONDecoder().decode(SplitSessionResponse.self, from: data)
+    }
+
+    /// Records the chosen payment method on the backend.
+    static func selectPaymentMethod(
+        token: String,
+        participantId: UUID,
+        method: String
+    ) async throws -> SelectPaymentMethodResponse {
+        guard let url = URL(string: "http://localhost:8080/s/\(token)/select-payment-method") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        struct Payload: Encodable {
+            let participantId: UUID
+            let paymentMethod: String
+        }
+
+        request.httpBody = try JSONEncoder().encode(Payload(participantId: participantId, paymentMethod: method))
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+
+        return try JSONDecoder().decode(SelectPaymentMethodResponse.self, from: data)
+    }
+
+    /// Manually confirms settlement for a participant.
+    static func confirmSettlement(
+        token: String,
+        participantId: UUID
+    ) async throws {
+        guard let url = URL(string: "http://localhost:8080/s/\(token)/confirm") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        struct Payload: Encodable {
+            let participantId: UUID
+            let confirmedBy: String?
+        }
+
+        request.httpBody = try JSONEncoder().encode(Payload(participantId: participantId, confirmedBy: "host"))
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
     }
 
     /// Fetches a previously finalized split session by its ID (for shareable links).

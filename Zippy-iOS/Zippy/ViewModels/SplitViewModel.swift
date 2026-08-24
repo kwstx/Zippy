@@ -127,6 +127,55 @@ final class SplitViewModel: ObservableObject {
         isFinalizing = false
     }
 
+    // MARK: - External Payment Methods
+
+    func selectPaymentMethod(participantId: UUID, method: String) async -> SelectPaymentMethodResponse? {
+        guard let token = shareableURL?.components(separatedBy: "/s/").last, !token.isEmpty else {
+            // Update local balance state immediately if session is not yet finalized
+            if let index = splitResult?.balances.firstIndex(where: { $0.participantId == participantId }) {
+                var balances = splitResult!.balances
+                balances[index].paymentMethod = method
+                balances[index].settlementStatus = .pendingConfirmation
+                splitResult = SplitResult(balances: balances, assignedSubtotal: splitResult?.assignedSubtotal ?? 0)
+            }
+            return nil
+        }
+
+        do {
+            let response = try await ReceiptService.selectPaymentMethod(
+                token: token,
+                participantId: participantId,
+                method: method
+            )
+            await refreshStatus()
+            return response
+        } catch {
+            self.errorMessage = "Failed to select payment method: \(error.localizedDescription)"
+            return nil
+        }
+    }
+
+    func confirmSettlement(participantId: UUID) async {
+        guard let token = shareableURL?.components(separatedBy: "/s/").last, !token.isEmpty else {
+            // Update local state if session is not yet finalized
+            if let index = splitResult?.balances.firstIndex(where: { $0.participantId == participantId }) {
+                var balances = splitResult!.balances
+                balances[index].isPaid = true
+                balances[index].settlementStatus = .settled
+                balances[index].paidAt = Date()
+                splitResult = SplitResult(balances: balances, assignedSubtotal: splitResult?.assignedSubtotal ?? 0)
+            }
+            return
+        }
+
+        do {
+            try await ReceiptService.confirmSettlement(token: token, participantId: participantId)
+            await refreshStatus()
+        } catch {
+            self.errorMessage = "Failed to confirm settlement: \(error.localizedDescription)"
+        }
+    }
+
     // MARK: - Status Polling
 
     func refreshStatus() async {

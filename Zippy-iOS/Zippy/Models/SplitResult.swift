@@ -2,6 +2,13 @@
 
 import Foundation
 
+/// Status of a participant's balance settlement.
+enum SettlementStatus: String, Codable, Equatable {
+    case unpaid = "unpaid"
+    case pendingConfirmation = "pending_confirmation"
+    case settled = "settled"
+}
+
 /// How much a single participant owes, broken down by component.
 struct PersonBalance: Identifiable, Codable, Equatable {
     var id: UUID { participantId }
@@ -14,6 +21,7 @@ struct PersonBalance: Identifiable, Codable, Equatable {
     var isPaid: Bool
     var paidAt: Date?
     var paymentMethod: String?
+    var settlementStatus: SettlementStatus
 
     init(
         participantId: UUID,
@@ -24,7 +32,8 @@ struct PersonBalance: Identifiable, Codable, Equatable {
         total: Double,
         isPaid: Bool = false,
         paidAt: Date? = nil,
-        paymentMethod: String? = nil
+        paymentMethod: String? = nil,
+        settlementStatus: SettlementStatus = .unpaid
     ) {
         self.participantId = participantId
         self.name = name
@@ -35,6 +44,7 @@ struct PersonBalance: Identifiable, Codable, Equatable {
         self.isPaid = isPaid
         self.paidAt = paidAt
         self.paymentMethod = paymentMethod
+        self.settlementStatus = isPaid ? .settled : settlementStatus
     }
 }
 

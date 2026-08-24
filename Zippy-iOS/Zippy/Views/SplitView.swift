@@ -9,7 +9,7 @@ struct SplitView: View {
     @State private var selectedItemIndex: Int?
     @State private var showingAddParticipant: Bool = false
     @State private var isLinkCopied: Bool = false
-    @FocusState private var isNameFieldFocused: Bool
+    @State private var expandedParticipantId: UUID?
 
     init(receipt: ExtractedReceiptResponse) {
         _viewModel = StateObject(wrappedValue: SplitViewModel(receipt: receipt))
@@ -54,6 +54,13 @@ struct SplitView: View {
         .navigationTitle("Split")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
+        .task {
+            // Background polling loop if session is finalized
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 4_000_000_000)
+                await viewModel.refreshStatus()
+            }
+        }
         .sheet(item: $selectedItemIndex) { index in
             ItemAssignmentSheet(
                 item: viewModel.receipt.items[index],
@@ -225,6 +232,9 @@ struct SplitView: View {
                     .font(.system(.caption2, design: .monospaced))
                     .foregroundColor(Color(white: 0.4))
                 Spacer()
+                Text("Tap person to pay / settle")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(Color(white: 0.4))
             }
             .padding(.vertical, 14)
 
@@ -232,23 +242,45 @@ struct SplitView: View {
 
             ForEach(result.balances) { balance in
                 VStack(spacing: 0) {
-                    // Name header
-                    HStack {
-                        Text(balance.name)
-                            .font(.system(.body, design: .monospaced))
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
-                        Spacer()
-                        if balance.isPaid {
-                            Text("PAID")
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                .foregroundColor(.black)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Color.white)
+                    // Clickable Person Header
+                    Button(action: {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            if expandedParticipantId == balance.participantId {
+                                expandedParticipantId = nil
+                            } else {
+                                expandedParticipantId = balance.participantId
+                            }
                         }
+                    }) {
+                        HStack {
+                            Text(balance.name)
+                                .font(.system(.body, design: .monospaced))
+                                .fontWeight(.bold)
+                                .foregroundColor(.white)
+                            Spacer()
+                            if balance.isPaid || balance.settlementStatus == .settled {
+                                Text("PAID")
+                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                    .foregroundColor(.black)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.white)
+                            } else if balance.settlementStatus == .pendingConfirmation || balance.paymentMethod != nil {
+                                Text("AWAITING CONFIRMATION")
+                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .overlay(Rectangle().stroke(Color.white, lineWidth: 0.5))
+                            }
+                            Image(systemName: expandedParticipantId == balance.participantId ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(Color(white: 0.5))
+                        }
+                        .padding(.top, 14)
+                        .contentShape(Rectangle())
                     }
-                    .padding(.top, 14)
+                    .buttonStyle(.plain)
 
                     // Breakdown
                     balanceRow(label: "Items", amount: balance.itemsSubtotal)
@@ -268,6 +300,29 @@ struct SplitView: View {
                             .foregroundColor(.white)
                     }
                     .padding(.vertical, 8)
+
+                    // Surface external payment methods stack if expanded
+                    if expandedParticipantId == balance.participantId {
+                        ExternalPaymentMethodsView(
+                            participantId: balance.participantId,
+                            participantName: balance.name,
+                            amount: balance.total,
+                            token: viewModel.shareableURL?.components(separatedBy: "/s/").last,
+                            settlementStatus: balance.settlementStatus,
+                            selectedMethod: balance.paymentMethod,
+                            onMethodSelected: { method in
+                                Task {
+                                    _ = await viewModel.selectPaymentMethod(participantId: balance.participantId, method: method)
+                                }
+                            },
+                            onConfirmManual: {
+                                Task {
+                                    await viewModel.confirmSettlement(participantId: balance.participantId)
+                                }
+                            }
+                        )
+                        .padding(.vertical, 12)
+                    }
 
                     thinDivider()
                 }

@@ -16,7 +16,14 @@ func routes(_ app: Application) throws {
             splits.get(":id", use: splitController.get)
             splits.get("token", ":token", use: splitController.getByToken)
             splits.post(":token", "pay", use: splitController.processGuestPayment)
+            splits.post(":token", "select-payment-method", use: splitController.selectPaymentMethod)
+            splits.post(":token", "confirm", use: splitController.confirmSettlement)
+            splits.post("webhook", use: splitController.handleWebhook)
             splits.get(":token", "status", use: splitController.getStatus)
+        }
+
+        api.group("webhooks") { webhooks in
+            webhooks.post("payment", use: splitController.handleWebhook)
         }
     }
     
@@ -25,6 +32,8 @@ func routes(_ app: Application) throws {
         guest.get(use: splitController.getByToken)
         guest.get("view", use: splitController.viewGuestHTML)
         guest.post("pay", use: splitController.processGuestPayment)
+        guest.post("select-payment-method", use: splitController.selectPaymentMethod)
+        guest.post("confirm", use: splitController.confirmSettlement)
         guest.get("status", use: splitController.getStatus)
     }
 }

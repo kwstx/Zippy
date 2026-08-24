@@ -8,6 +8,8 @@ struct ReceiptResultView: View {
     /// Controls whether shared items are split evenly or assigned manually.
     @State private var splitSharedEvenly: Bool = true
     @State private var showingSplit: Bool = false
+    @State private var settlementStatus: SettlementStatus = .unpaid
+    @State private var selectedPaymentMethod: String? = nil
     
     var body: some View {
         ScrollView {
@@ -41,6 +43,26 @@ struct ReceiptResultView: View {
                 
                 // Total
                 totalRow(label: "Total", amount: receipt.total)
+                thinDivider()
+
+                // External Payment Methods Section
+                ExternalPaymentMethodsView(
+                    participantId: receipt.id ?? UUID(),
+                    participantName: "Bill Total",
+                    amount: receipt.total,
+                    token: nil,
+                    settlementStatus: settlementStatus,
+                    selectedMethod: selectedPaymentMethod,
+                    onMethodSelected: { method in
+                        selectedPaymentMethod = method
+                        settlementStatus = .pendingConfirmation
+                    },
+                    onConfirmManual: {
+                        settlementStatus = .settled
+                    }
+                )
+                .padding(.vertical, 16)
+                
                 thinDivider()
                 
                 // Split button

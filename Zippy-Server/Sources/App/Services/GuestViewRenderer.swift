@@ -377,6 +377,7 @@ enum GuestViewRenderer {
                     gap: 8px;
                 }
                 /* Paid Confirmation Box */
+                /* Paid Confirmation Box */
                 .paid-box {
                     padding: 20px;
                     background-color: var(--text);
@@ -395,6 +396,105 @@ enum GuestViewRenderer {
                     font-size: 13px;
                     opacity: 0.8;
                     font-family: var(--font-mono);
+                }
+                /* External Payment Methods - Plain Black Text Stack */
+                .external-methods-container {
+                    margin-top: 20px;
+                    padding-top: 16px;
+                    border-top: 1px solid var(--border);
+                }
+                .external-stack-title {
+                    font-family: var(--font-mono);
+                    font-size: 11px;
+                    font-weight: 700;
+                    text-transform: uppercase;
+                    letter-spacing: 0.08em;
+                    color: var(--text-secondary);
+                    margin-bottom: 10px;
+                }
+                .payment-labels-stack {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: stretch;
+                    gap: 0px;
+                    background-color: var(--bg);
+                    border: 1px solid var(--border);
+                }
+                .plain-text-payment-label {
+                    background: none;
+                    border: none;
+                    border-bottom: 1px solid var(--border);
+                    padding: 14px 16px;
+                    font-family: var(--font-sans);
+                    font-size: 16px;
+                    font-weight: 600;
+                    color: #000000;
+                    cursor: pointer;
+                    text-align: left;
+                    text-decoration: none;
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    width: 100%;
+                    transition: background-color 0.15s ease;
+                }
+                .plain-text-payment-label:last-child {
+                    border-bottom: none;
+                }
+                .plain-text-payment-label:hover {
+                    background-color: var(--surface-hover);
+                }
+                .plain-text-payment-label .arrow-indicator {
+                    font-family: var(--font-mono);
+                    font-size: 14px;
+                    color: var(--text-muted);
+                }
+                /* Instructions & Pending State */
+                .instructions-box {
+                    display: none;
+                    margin-top: 14px;
+                    padding: 14px;
+                    background-color: var(--surface);
+                    border: 1px solid var(--border-dark);
+                    font-family: var(--font-mono);
+                    font-size: 12px;
+                    line-height: 1.6;
+                    white-space: pre-wrap;
+                }
+                .pending-box {
+                    display: none;
+                    padding: 18px;
+                    background-color: var(--surface);
+                    border: 1px solid var(--border-dark);
+                    text-align: center;
+                    margin-top: 14px;
+                }
+                .pending-box-title {
+                    font-family: var(--font-mono);
+                    font-size: 13px;
+                    font-weight: 700;
+                    letter-spacing: 0.05em;
+                    text-transform: uppercase;
+                    margin-bottom: 6px;
+                }
+                .pending-box-detail {
+                    font-size: 12px;
+                    color: var(--text-secondary);
+                    font-family: var(--font-mono);
+                    margin-bottom: 14px;
+                }
+                .pending-tag {
+                    font-family: var(--font-mono);
+                    font-size: 10px;
+                    font-weight: 600;
+                    text-transform: uppercase;
+                    color: #000000;
+                    background-color: #F0F0F0;
+                    border: 1px solid #000000;
+                    padding: 2px 6px;
+                    display: inline-block;
+                    margin-top: 4px;
+                    letter-spacing: 0.05em;
                 }
                 /* Accordion for Full Receipt */
                 .receipt-accordion {
@@ -512,6 +612,34 @@ enum GuestViewRenderer {
 
                     <!-- Payment Action Section -->
                     <div id="paymentActionContainer">
+                        <!-- External Payment Methods: Plain Black Text Labels Stack -->
+                        <div class="external-methods-container">
+                            <div class="external-stack-title">External Payment Methods</div>
+                            <div class="payment-labels-stack">
+                                <button type="button" class="plain-text-payment-label" onclick="selectExternalMethod('Venmo')">
+                                    <span>Venmo</span>
+                                    <span class="arrow-indicator">→</span>
+                                </button>
+                                <button type="button" class="plain-text-payment-label" onclick="selectExternalMethod('PayPal')">
+                                    <span>PayPal</span>
+                                    <span class="arrow-indicator">→</span>
+                                </button>
+                                <button type="button" class="plain-text-payment-label" onclick="selectExternalMethod('Cash App')">
+                                    <span>Cash App</span>
+                                    <span class="arrow-indicator">→</span>
+                                </button>
+                                <button type="button" class="plain-text-payment-label" onclick="selectExternalMethod('Bank transfer')">
+                                    <span>Bank transfer</span>
+                                    <span class="arrow-indicator">→</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Bank Transfer / Deep Link Instructions -->
+                        <div class="instructions-box" id="instructionsBox"></div>
+
+                        <div class="divider" style="margin: 16px 0;"></div>
+
                         <!-- Apple Pay / Web Payment Request Button -->
                         <button class="btn btn-primary btn-apple-pay" id="btnApplePay" onclick="handlePaymentRequest()">
                             <svg viewBox="0 0 170 85" width="40" height="20">
@@ -552,7 +680,18 @@ enum GuestViewRenderer {
 
                         <!-- Mark as Settled / Cash Alternative -->
                         <button class="btn btn-secondary" style="border-style: dashed;" onclick="markSettledManually()">
-                            Mark as Settled (Cash / Venmo)
+                            Mark as Settled (Cash)
+                        </button>
+                    </div>
+
+                    <!-- Pending State Display (Awaiting Webhook or Manual Confirmation) -->
+                    <div class="pending-box" id="pendingConfirmationBox" style="display: none;">
+                        <div class="pending-box-title">⏱ Awaiting Confirmation</div>
+                        <div class="pending-box-detail" id="pendingConfirmationDetail">
+                            Payment method recorded. Awaiting webhook or confirmation.
+                        </div>
+                        <button class="btn btn-primary" style="margin-top: 6px;" onclick="confirmManualSettlement()">
+                            Confirm Settlement Manually
                         </button>
                     </div>
 
@@ -681,20 +820,111 @@ enum GuestViewRenderer {
                     // Build breakdown list
                     renderBreakdown(person);
 
-                    // Toggle payment buttons vs paid confirmation
+                    // Toggle payment buttons vs pending confirmation vs paid confirmation
                     const actionContainer = document.getElementById('paymentActionContainer');
+                    const pendingBox = document.getElementById('pendingConfirmationBox');
+                    const pendingDetail = document.getElementById('pendingConfirmationDetail');
                     const paidBox = document.getElementById('paidConfirmationBox');
                     const paidDetail = document.getElementById('paidConfirmationDetail');
 
-                    if (person.isPaid) {
+                    const isSettled = person.isPaid || person.settlementStatus === 'settled';
+                    const isPending = !isSettled && (person.settlementStatus === 'pending_confirmation' || person.paymentMethod);
+
+                    if (isSettled) {
                         actionContainer.style.display = 'none';
+                        pendingBox.style.display = 'none';
                         paidBox.style.display = 'block';
                         const dateStr = person.paidAt ? new Date(person.paidAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-                        const method = person.paymentMethod || 'Apple Pay';
+                        const method = person.paymentMethod || 'Settled';
                         paidDetail.textContent = formatMoney(person.total) + ' settled via ' + method + (dateStr ? ' at ' + dateStr : '');
+                    } else if (isPending) {
+                        actionContainer.style.display = 'block';
+                        pendingBox.style.display = 'block';
+                        paidBox.style.display = 'none';
+                        const method = person.paymentMethod || 'External method';
+                        pendingDetail.textContent = 'Selected: ' + method + ' (' + formatMoney(person.total) + '). Awaiting webhook or host confirmation.';
                     } else {
                         actionContainer.style.display = 'block';
+                        pendingBox.style.display = 'none';
                         paidBox.style.display = 'none';
+                    }
+                }
+
+                // Select External Payment Method (Venmo, PayPal, Cash App, Bank transfer)
+                async function selectExternalMethod(method) {
+                    const person = BALANCES.find(p => p.participantId === selectedParticipantId);
+                    if (!person) return;
+
+                    try {
+                        const res = await fetch('/s/' + SESSION_TOKEN + '/select-payment-method', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                participantId: person.participantId,
+                                paymentMethod: method
+                            })
+                        });
+
+                        if (!res.ok) {
+                            throw new Error('Failed to record method');
+                        }
+
+                        const data = await res.json();
+                        person.paymentMethod = method;
+                        person.settlementStatus = 'pending_confirmation';
+                        person.isPaid = false;
+
+                        showToast(method + ' selected · Awaiting confirmation');
+
+                        // Handle instructions or deep link
+                        const instrBox = document.getElementById('instructionsBox');
+                        if (data.instructions) {
+                            instrBox.textContent = data.instructions;
+                            instrBox.style.display = 'block';
+                        } else {
+                            instrBox.style.display = 'none';
+                        }
+
+                        if (data.deepLink) {
+                            window.open(data.deepLink, '_blank');
+                        }
+
+                        updateSummaryUI();
+                        selectParticipant(person.participantId);
+                    } catch (err) {
+                        showToast('Error recording ' + method);
+                    }
+                }
+
+                // Confirm settlement manually
+                async function confirmManualSettlement() {
+                    const person = BALANCES.find(p => p.participantId === selectedParticipantId);
+                    if (!person) return;
+
+                    try {
+                        const res = await fetch('/s/' + SESSION_TOKEN + '/confirm', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                participantId: person.participantId,
+                                confirmedBy: 'guest'
+                            })
+                        });
+
+                        if (!res.ok) {
+                            throw new Error('Confirmation failed');
+                        }
+
+                        const data = await res.json();
+                        person.isPaid = true;
+                        person.settlementStatus = 'settled';
+                        person.paidAt = new Date().toISOString();
+
+                        showToast('✓ Settlement Confirmed');
+                        updateSummaryUI();
+                        selectParticipant(person.participantId);
+                    } catch (err) {
+                        showToast('Failed to confirm settlement');
                     }
                 }
 
@@ -847,6 +1077,7 @@ enum GuestViewRenderer {
                         const person = BALANCES.find(p => p.participantId === participantId);
                         if (person) {
                             person.isPaid = true;
+                            person.settlementStatus = 'settled';
                             person.paidAt = new Date().toISOString();
                             person.paymentMethod = method;
                         }
@@ -870,6 +1101,7 @@ enum GuestViewRenderer {
                                     const local = BALANCES.find(b => b.participantId === p.id);
                                     if (local) {
                                         local.isPaid = p.isPaid;
+                                        local.settlementStatus = p.settlementStatus;
                                         local.paidAt = p.paidAt;
                                         local.paymentMethod = p.paymentMethod;
                                     }
@@ -887,7 +1119,7 @@ enum GuestViewRenderer {
 
                 // Update summary metrics & participant badges
                 function updateSummaryUI() {
-                    const paidBalances = BALANCES.filter(b => b.isPaid);
+                    const paidBalances = BALANCES.filter(b => b.isPaid || b.settlementStatus === 'settled');
                     const paidCount = paidBalances.length;
                     const totalCount = BALANCES.length;
                     const totalCollected = paidBalances.reduce((sum, b) => sum + b.total, 0);
@@ -919,9 +1151,13 @@ enum GuestViewRenderer {
                         if (card) {
                             const tagContainer = card.querySelector('.status-tag-container');
                             if (tagContainer) {
-                                tagContainer.innerHTML = b.isPaid 
-                                    ? '<span class="paid-tag">✓ PAID</span>'
-                                    : '<span class="unpaid-tag">UNPAID</span>';
+                                if (b.isPaid || b.settlementStatus === 'settled') {
+                                    tagContainer.innerHTML = '<span class="paid-tag">✓ PAID</span>';
+                                } else if (b.settlementStatus === 'pending_confirmation' || b.paymentMethod) {
+                                    tagContainer.innerHTML = '<span class="pending-tag">AWAITING CONFIRMATION</span>';
+                                } else {
+                                    tagContainer.innerHTML = '<span class="unpaid-tag">UNPAID</span>';
+                                }
                             }
                         }
                     });
@@ -949,9 +1185,14 @@ enum GuestViewRenderer {
     private static func renderParticipantCards(balances: [PersonBalanceDTO]) -> String {
         return balances.map { balance in
             let initial = String(balance.name.prefix(1)).uppercased()
-            let statusTag = balance.isPaid
-                ? "<span class=\"paid-tag\">✓ PAID</span>"
-                : "<span class=\"unpaid-tag\">UNPAID</span>"
+            let statusTag: String
+            if balance.isPaid || balance.settlementStatus == .settled {
+                statusTag = "<span class=\"paid-tag\">✓ PAID</span>"
+            } else if balance.settlementStatus == .pendingConfirmation || balance.paymentMethod != nil {
+                statusTag = "<span class=\"pending-tag\">AWAITING CONFIRMATION</span>"
+            } else {
+                statusTag = "<span class=\"unpaid-tag\">UNPAID</span>"
+            }
 
             return """
             <div class="participant-card" data-id="\(balance.participantId.uuidString)" onclick="selectParticipant('\(balance.participantId.uuidString)')">

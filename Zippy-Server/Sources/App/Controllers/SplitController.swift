@@ -190,6 +190,218 @@ struct SplitController {
         return Response(status: .ok, headers: headers, body: .init(string: html))
     }
 
+    /// Builds deep links and instructions for external payment methods.
+    private static func paymentDetails(
+        method: String,
+        amount: Double,
+        participantName: String,
+        token: String
+    ) -> (deepLink: String?, instructions: String?) {
+        let formattedAmount = String(format: "%.2f", amount)
+        let reference = "ZIP-\(token.prefix(6).uppercased())"
+        let note = "Zippy Bill Split - \(participantName) (\(reference))"
+        let encodedNote = note.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? note
+
+        switch method.lowercased() {
+        case "venmo":
+            let deepLink = "venmo://paycharge?txn=pay&amount=\(formattedAmount)&note=\(encodedNote)"
+            let instructions = "Open Venmo to pay $\(formattedAmount). Settlement status will flip to settled upon webhook or manual confirmation."
+            return (deepLink, instructions)
+
+        case "paypal":
+            let deepLink = "https://www.paypal.com/paypalme/zippysplit/\(formattedAmount)"
+            let instructions = "Open PayPal to transfer $\(formattedAmount). Include reference \(reference) in note. Settlement flips to settled upon webhook or manual confirmation."
+            return (deepLink, instructions)
+
+        case "cash app", "cashapp", "cash_app":
+            let deepLink = "https://cash.app/$zippysplit/\(formattedAmount)"
+            let instructions = "Open Cash App to send $\(formattedAmount). Include note \(reference). Settlement flips to settled upon webhook or manual confirmation."
+            return (deepLink, instructions)
+
+        case "bank transfer", "bank_transfer", "ach", "wire":
+            let instructions = """
+            Direct Bank Transfer (ACH / Wire)
+            Routing Number: 021000021
+            Account Number: 9876543210
+            Account Name: Zippy Split Host
+            Reference Code: \(reference)
+            Instructions: Include reference code in transfer memo. Settlement status flips upon bank webhook confirmation or manual confirmation.
+            """
+            return (nil, instructions)
+
+        default:
+            return (nil, "Payment method \(method) selected. Awaiting confirmation.")
+        }
+    }
+
+    /// Records the chosen payment method and puts settlement status in pendingConfirmation.
+    @Sendable
+    func selectPaymentMethod(req: Request) async throws -> SelectPaymentMethodResponse {
+        let token = req.parameters.get("token")
+        let sessionId = req.parameters.get("id", as: UUID.self)
+        let input = try req.content.decode(SelectPaymentMethodRequest.self)
+
+        let session: SplitSession
+        if let token = token {
+            guard let found = try await SplitSession.query(on: req.db)
+                .filter(\.$shareToken == token)
+                .first() else {
+                throw Abort(.notFound, reason: "No split session found for token: \(token)")
+            }
+            session = found
+        } else if let sessionId = sessionId {
+            guard let found = try await SplitSession.find(sessionId, on: req.db) else {
+                throw Abort(.notFound, reason: "No split session found with ID: \(sessionId)")
+            }
+            session = found
+        } else {
+            throw Abort(.badRequest, reason: "Missing split token or session ID.")
+        }
+
+        guard let index = session.balances.firstIndex(where: { $0.participantId == input.participantId }) else {
+            throw Abort(.notFound, reason: "Participant not found in this split session.")
+        }
+
+        var balance = session.balances[index]
+        balance.paymentMethod = input.paymentMethod
+        balance.settlementStatus = .pendingConfirmation
+        balance.isPaid = false
+        session.balances[index] = balance
+
+        try await session.update(on: req.db)
+
+        let tokenString = session.shareToken ?? session.id?.uuidString ?? "ZIPPY"
+        let details = Self.paymentDetails(
+            method: input.paymentMethod,
+            amount: balance.total,
+            participantName: balance.name,
+            token: tokenString
+        )
+
+        req.logger.info("Recorded payment method \(input.paymentMethod) for \(balance.name), status pending confirmation")
+
+        return SelectPaymentMethodResponse(
+            success: true,
+            participantId: balance.participantId,
+            paymentMethod: input.paymentMethod,
+            settlementStatus: .pendingConfirmation,
+            deepLink: details.deepLink,
+            instructions: details.instructions,
+            message: "Payment method recorded. Awaiting webhook or manual confirmation."
+        )
+    }
+
+    /// Manually confirms settlement to flip status from pendingConfirmation to settled.
+    @Sendable
+    func confirmSettlement(req: Request) async throws -> GuestPaymentResponse {
+        let token = req.parameters.get("token")
+        let sessionId = req.parameters.get("id", as: UUID.self)
+        let input = try req.content.decode(ConfirmSettlementRequest.self)
+
+        let session: SplitSession
+        if let token = token {
+            guard let found = try await SplitSession.query(on: req.db)
+                .filter(\.$shareToken == token)
+                .first() else {
+                throw Abort(.notFound, reason: "No split session found for token: \(token)")
+            }
+            session = found
+        } else if let sessionId = sessionId {
+            guard let found = try await SplitSession.find(sessionId, on: req.db) else {
+                throw Abort(.notFound, reason: "No split session found with ID: \(sessionId)")
+            }
+            session = found
+        } else {
+            throw Abort(.badRequest, reason: "Missing split token or session ID.")
+        }
+
+        guard let index = session.balances.firstIndex(where: { $0.participantId == input.participantId }) else {
+            throw Abort(.notFound, reason: "Participant not found in this split session.")
+        }
+
+        var balance = session.balances[index]
+        balance.isPaid = true
+        balance.settlementStatus = .settled
+        balance.paidAt = Date()
+        if balance.paymentMethod == nil {
+            balance.paymentMethod = "Manual Confirmation"
+        }
+        session.balances[index] = balance
+
+        try await session.update(on: req.db)
+
+        req.logger.info("Manual confirmation: \(balance.name) settlement confirmed (\(balance.paymentMethod ?? "Manual"))")
+
+        return GuestPaymentResponse(
+            success: true,
+            participantId: balance.participantId,
+            isPaid: true,
+            settlementStatus: .settled,
+            paidAt: balance.paidAt ?? Date(),
+            totalPaid: balance.total,
+            message: "Settlement confirmed for \(balance.name)"
+        )
+    }
+
+    /// Webhook endpoint called by external payment providers to flip settlement status.
+    @Sendable
+    func handleWebhook(req: Request) async throws -> Response {
+        let payload = try req.content.decode(PaymentWebhookPayload.self)
+
+        var session: SplitSession?
+
+        if let token = payload.shareToken {
+            session = try await SplitSession.query(on: req.db)
+                .filter(\.$shareToken == token)
+                .first()
+        } else if let sessionId = payload.sessionId {
+            session = try await SplitSession.find(sessionId, on: req.db)
+        } else if let participantId = payload.participantId {
+            // Find any session containing this participant
+            let allSessions = try await SplitSession.query(on: req.db).all()
+            session = allSessions.first(where: { s in
+                s.balances.contains(where: { $0.participantId == participantId })
+            })
+        }
+
+        guard let splitSession = session else {
+            throw Abort(.notFound, reason: "No split session matched webhook payload.")
+        }
+
+        guard let participantId = payload.participantId,
+              let index = splitSession.balances.firstIndex(where: { $0.participantId == participantId }) else {
+            throw Abort(.notFound, reason: "Participant not found in matching split session.")
+        }
+
+        var balance = splitSession.balances[index]
+        balance.isPaid = true
+        balance.settlementStatus = .settled
+        balance.paidAt = Date()
+        if let method = payload.paymentMethod {
+            balance.paymentMethod = method
+        }
+        splitSession.balances[index] = balance
+
+        try await splitSession.update(on: req.db)
+
+        req.logger.info("Webhook processed: \(balance.name) settled via \(balance.paymentMethod ?? "Webhook")")
+
+        struct WebhookAck: Content {
+            let success: Bool
+            let participantId: UUID
+            let settlementStatus: SettlementStatus
+            let message: String
+        }
+
+        let ack = WebhookAck(
+            success: true,
+            participantId: balance.participantId,
+            settlementStatus: .settled,
+            message: "Settlement status flipped to settled via webhook"
+        )
+        return try await ack.encodeResponse(for: req)
+    }
+
     /// Handles unauthenticated guest payment / settlement.
     @Sendable
     func processGuestPayment(req: Request) async throws -> GuestPaymentResponse {
@@ -211,6 +423,7 @@ struct SplitController {
 
         var balance = session.balances[index]
         balance.isPaid = true
+        balance.settlementStatus = .settled
         balance.paidAt = Date()
         balance.paymentMethod = payment.paymentMethod
         session.balances[index] = balance
@@ -223,6 +436,7 @@ struct SplitController {
             success: true,
             participantId: balance.participantId,
             isPaid: true,
+            settlementStatus: .settled,
             paidAt: balance.paidAt ?? Date(),
             totalPaid: balance.total,
             message: "Payment successfully recorded for \(balance.name)"
@@ -252,6 +466,7 @@ struct SplitController {
                 name: $0.name,
                 total: $0.total,
                 isPaid: $0.isPaid,
+                settlementStatus: $0.settlementStatus,
                 paidAt: $0.paidAt,
                 paymentMethod: $0.paymentMethod
             )
