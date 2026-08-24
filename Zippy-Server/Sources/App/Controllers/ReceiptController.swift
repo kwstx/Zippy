@@ -89,6 +89,157 @@ struct ReceiptController {
         return receipt
     }
 
+    /// Creates a manually entered receipt directly into the database.
+    @Sendable
+    func createManual(req: Request) async throws -> ExtractedReceipt {
+        let input = try req.content.decode(CreateManualReceiptRequest.self)
+
+        let statedSubtotal = input.subtotal ?? 0
+        let statedTax = input.tax ?? 0
+        let statedTip = input.tip ?? 0
+        let statedTotal = input.total ?? 0
+
+        let validation = ReceiptValidator.validate(
+            items: input.items,
+            subtotal: statedSubtotal,
+            tax: statedTax,
+            tip: statedTip,
+            total: statedTotal
+        )
+
+        let effectiveSubtotal = statedSubtotal > 0 ? statedSubtotal : validation.computedSubtotal
+        let effectiveTotal = statedTotal > 0 ? statedTotal : validation.computedTotal
+        let refId = input.referenceId ?? "manual-\(UUID().uuidString.prefix(8))"
+
+        let receipt = ExtractedReceipt(
+            referenceId: refId,
+            items: input.items,
+            subtotal: effectiveSubtotal,
+            tax: statedTax,
+            tip: statedTip,
+            total: effectiveTotal,
+            category: input.category
+        )
+
+        try await receipt.save(on: req.db)
+        req.logger.info("Manually created receipt \(receipt.id?.uuidString ?? "?") with \(input.items.count) items, total $\(effectiveTotal)")
+        return receipt
+    }
+
+    /// Patches an extracted receipt with manual edits/corrections, re-runs validation, and updates any active split session.
+    @Sendable
+    func patchReceipt(req: Request) async throws -> PatchReceiptResponse {
+        guard let id = req.parameters.get("id", as: UUID.self) else {
+            throw Abort(.badRequest, reason: "Invalid or missing receipt ID.")
+        }
+
+        let input = try req.content.decode(PatchReceiptRequest.self)
+
+        guard let receipt = try await ExtractedReceipt.find(id, on: req.db) else {
+            throw Abort(.notFound, reason: "No extracted receipt found with ID: \(id)")
+        }
+
+        // Overwrite fields
+        if let newItems = input.items {
+            receipt.items = newItems
+        }
+        if let newSubtotal = input.subtotal {
+            receipt.subtotal = newSubtotal
+        }
+        if let newTax = input.tax {
+            receipt.tax = newTax
+        }
+        if let newTip = input.tip {
+            receipt.tip = newTip
+        }
+        if let newTotal = input.total {
+            receipt.total = newTotal
+        }
+        if let newCategory = input.category {
+            receipt.category = newCategory
+        }
+        if let newRef = input.referenceId {
+            receipt.referenceId = newRef
+        }
+
+        // Re-run authoritative validation
+        let validation = ReceiptValidator.validate(
+            items: receipt.items,
+            subtotal: receipt.subtotal,
+            tax: receipt.tax,
+            tip: receipt.tip,
+            total: receipt.total
+        )
+
+        // Save updated receipt
+        try await receipt.update(on: req.db)
+        req.logger.info("Receipt \(id) patched: \(receipt.items.count) items, subtotal $\(receipt.subtotal), total $\(receipt.total). Valid: \(validation.isValid), Math: \(validation.isMathConsistent)")
+
+        // Re-calculate linked SplitSession if active, to immediately synchronize the shareable link state
+        var splitResponse: SplitSessionResponse? = nil
+        var shareableURL: String? = nil
+
+        if let session = try await SplitSession.query(on: req.db).filter(\.$receiptId == id).first() {
+            // Recompute authoritative per-person balances with updated receipt items and taxes
+            let updatedBalances = SplitCalculator.calculate(
+                items: receipt.items,
+                participants: session.participants,
+                assignments: session.assignments,
+                tax: receipt.tax,
+                tip: receipt.tip
+            )
+
+            // Preserve existing payment/settlement flags for participants
+            var mergedBalances = updatedBalances
+            for i in mergedBalances.indices {
+                if let oldBalance = session.balances.first(where: { $0.participantId == mergedBalances[i].participantId }) {
+                    mergedBalances[i].isPaid = oldBalance.isPaid
+                    mergedBalances[i].paidAt = oldBalance.paidAt
+                    mergedBalances[i].paymentMethod = oldBalance.paymentMethod
+                    mergedBalances[i].settlementStatus = oldBalance.settlementStatus
+                }
+            }
+
+            session.balances = mergedBalances
+            if let cat = receipt.category {
+                session.category = cat
+            }
+
+            try await session.update(on: req.db)
+
+            let baseURL = Environment.get("BASE_URL") ?? "http://localhost:8080"
+            let token = session.shareToken ?? session.id!.uuidString
+            let url = "\(baseURL)/s/\(token)"
+            shareableURL = url
+
+            splitResponse = SplitSessionResponse(
+                id: session.id!,
+                receiptId: session.receiptId,
+                participants: session.participants,
+                balances: session.balances,
+                receiptTotal: receipt.total,
+                category: session.category,
+                shareableURL: url,
+                createdAt: session.createdAt
+            )
+
+            req.logger.info("Synchronized split session \(session.id?.uuidString ?? "") balances for shareable URL \(url)")
+        }
+
+        let message = validation.isMathConsistent
+            ? "Receipt updated and validated successfully."
+            : "Receipt updated with \(validation.warnings.count) validation notice(s)."
+
+        return PatchReceiptResponse(
+            success: validation.isValid,
+            receipt: receipt,
+            validation: validation,
+            splitSession: splitResponse,
+            shareableURL: shareableURL,
+            message: message
+        )
+    }
+
     /// Updates the optional category tag on an extracted receipt.
     @Sendable
     func updateCategory(req: Request) async throws -> ExtractedReceipt {

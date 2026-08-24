@@ -20,8 +20,10 @@ func routes(_ app: Application) throws {
         api.group("receipts") { receipts in
             receipts.get(use: receiptController.list)
             receipts.post("upload", use: receiptController.upload)
+            receipts.post("manual", use: receiptController.createManual)
             receipts.post(":referenceId", "extract", use: receiptController.extract)
             receipts.get(":id", "result", use: receiptController.getResult)
+            receipts.patch(":id", use: receiptController.patchReceipt)
             receipts.patch(":id", "category", use: receiptController.updateCategory)
         }
         

@@ -25,6 +25,38 @@ struct CreateSplitRequest: Content {
     let category: String?
 }
 
+/// Request body for patching an extracted receipt with manual corrections or edits.
+struct PatchReceiptRequest: Content {
+    let items: [ReceiptItem]?
+    let subtotal: Double?
+    let tax: Double?
+    let tip: Double?
+    let total: Double?
+    let category: String?
+    let referenceId: String?
+}
+
+/// Request body for manually entering a brand new receipt.
+struct CreateManualReceiptRequest: Content {
+    let referenceId: String?
+    let items: [ReceiptItem]
+    let subtotal: Double?
+    let tax: Double?
+    let tip: Double?
+    let total: Double?
+    let category: String?
+}
+
+/// Response returned after patching a receipt, including validation report and updated split session.
+struct PatchReceiptResponse: Content {
+    let success: Bool
+    let receipt: ExtractedReceipt
+    let validation: ReceiptValidationReport
+    let splitSession: SplitSessionResponse?
+    let shareableURL: String?
+    let message: String
+}
+
 /// Request body for updating receipt or split category.
 struct UpdateCategoryRequest: Content {
     let category: String?

@@ -10,6 +10,7 @@ struct ScanReceiptView: View {
     @State private var showingResult = false
     @State private var showingHistory = false
     @State private var showingGroups = false
+    @State private var showingManualEntry = false
 
     var body: some View {
         NavigationStack {
@@ -66,24 +67,50 @@ struct ScanReceiptView: View {
                         }
                         .padding(.horizontal, 40)
                     }
-                    
-                } else {
-                    // Default state — scan button
-                    Button(action: {
-                        showingImagePickerOptions = true
-                    }) {
-                        VStack(spacing: 16) {
-                            Image(systemName: "camera.fill")
-                                .font(.system(size: 80))
-                                .foregroundColor(.black)
-                            
-                            Text("Scan receipt")
-                                .font(.system(.title2, design: .rounded))
-                                .fontWeight(.medium)
-                                .foregroundColor(.black)
+                                   } else {
+                    // Default state — scan or manual entry options
+                    VStack(spacing: 28) {
+                        Button(action: {
+                            showingImagePickerOptions = true
+                        }) {
+                            VStack(spacing: 14) {
+                                Image(systemName: "camera.fill")
+                                    .font(.system(size: 72))
+                                    .foregroundColor(.black)
+                                
+                                Text("Scan receipt")
+                                    .font(.system(.title2, design: .rounded))
+                                    .fontWeight(.medium)
+                                    .foregroundColor(.black)
+                            }
+                        }
+                        .disabled(viewModel.isUploading)
+
+                        HStack {
+                            Rectangle().fill(Color(white: 0.8)).frame(height: 1)
+                            Text("OR")
+                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                .foregroundColor(Color(white: 0.5))
+                                .padding(.horizontal, 8)
+                            Rectangle().fill(Color(white: 0.8)).frame(height: 1)
+                        }
+                        .padding(.horizontal, 60)
+
+                        Button(action: {
+                            showingManualEntry = true
+                        }) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "square.and.pencil")
+                                    .font(.system(size: 13, design: .monospaced))
+                                Text("Manual entry / AI correction form")
+                                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                            }
+                            .foregroundColor(.black)
+                            .padding(.horizontal, 18)
+                            .padding(.vertical, 12)
+                            .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
                         }
                     }
-                    .disabled(viewModel.isUploading)
                 }
                 
                 if let errorMessage = viewModel.errorMessage {
@@ -164,6 +191,9 @@ struct ScanReceiptView: View {
                         .navigationBarBackButtonHidden(false)
                 }
             }
+            .navigationDestination(isPresented: $showingManualEntry) {
+                EditableReceiptFormView()
+            }   }
         }
     }
 }

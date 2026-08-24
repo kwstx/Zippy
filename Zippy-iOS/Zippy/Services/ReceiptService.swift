@@ -182,6 +182,62 @@ enum ReceiptService {
         return receipt
     }
 
+    /// Creates a manually entered receipt directly on the backend.
+    /// - Parameter payload: Receipt line items, subtotal, tax, tip, total, and category.
+    /// - Returns: Newly created ExtractedReceiptResponse with server-assigned UUID.
+    static func createManualReceipt(payload: PatchReceiptPayload) async throws -> ExtractedReceiptResponse {
+        guard let url = URL(string: "\(baseURL)/manual") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(payload)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            let body = String(data: data, encoding: .utf8) ?? ""
+            throw NSError(
+                domain: "ReceiptService",
+                code: (response as? HTTPURLResponse)?.statusCode ?? 0,
+                userInfo: [NSLocalizedDescriptionKey: "Failed to create manual receipt: \(body)"]
+            )
+        }
+
+        return try JSONDecoder().decode(ExtractedReceiptResponse.self, from: data)
+    }
+
+    /// Immediately PATCH-es receipt modifications to the Vapor backend for re-validation and link state updates.
+    /// - Parameters:
+    ///   - id: The receipt's UUID.
+    ///   - payload: Updated fields (items, subtotal, tax, tip, total, category).
+    /// - Returns: PatchReceiptResponse containing validated receipt, validation report, and updated shareable link.
+    static func patchReceipt(id: UUID, payload: PatchReceiptPayload) async throws -> PatchReceiptResponse {
+        guard let url = URL(string: "\(baseURL)/\(id)") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(payload)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            let body = String(data: data, encoding: .utf8) ?? ""
+            throw NSError(
+                domain: "ReceiptService",
+                code: (response as? HTTPURLResponse)?.statusCode ?? 0,
+                userInfo: [NSLocalizedDescriptionKey: "Failed to PATCH receipt: \(body)"]
+            )
+        }
+
+        return try JSONDecoder().decode(PatchReceiptResponse.self, from: data)
+    }
+
     /// Sends split data to the server for authoritative computation and persistence.
     /// - Parameters:
     ///   - receiptId: The database UUID of the extracted receipt.

@@ -8,6 +8,7 @@ struct ReceiptResultView: View {
     /// Controls whether shared items are split evenly or assigned manually.
     @State private var splitSharedEvenly: Bool = true
     @State private var showingSplit: Bool = false
+    @State private var showingEditableForm: Bool = false
     @State private var settlementStatus: SettlementStatus = .unpaid
     @State private var selectedPaymentMethod: String? = nil
     @State private var selectedCategory: ReceiptCategory?
@@ -45,6 +46,29 @@ struct ReceiptResultView: View {
                         }
                     }
                 )
+                .padding(.vertical, 12)
+
+                thinDivider()
+
+                // MARK: - Edit & Correct Banner Button
+                Button(action: {
+                    showingEditableForm = true
+                }) {
+                    HStack {
+                        Image(systemName: "square.and.pencil")
+                            .font(.system(size: 11, design: .monospaced))
+                        Text("CORRECT / OVERWRITE EXTRACTED FIELDS")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .tracking(0.5)
+                        Spacer()
+                        Text("EDIT →")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.vertical, 10)
+                    .padding(.horizontal, 12)
+                    .overlay(Rectangle().stroke(Color(white: 0.3), lineWidth: 0.5))
+                }
                 .padding(.vertical, 12)
 
                 thinDivider()
@@ -104,8 +128,24 @@ struct ReceiptResultView: View {
             .padding(.horizontal, 20)
         }
         .background(Color.black.ignoresSafeArea())
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(action: { showingEditableForm = true }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 12, design: .monospaced))
+                        Text("Edit")
+                            .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    }
+                    .foregroundColor(.white)
+                }
+            }
+        }
         .navigationDestination(isPresented: $showingSplit) {
             SplitView(receipt: receiptWithSelectedCategory)
+        }
+        .navigationDestination(isPresented: $showingEditableForm) {
+            EditableReceiptFormView(receipt: receiptWithSelectedCategory)
         }
     }
     
