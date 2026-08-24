@@ -126,4 +126,19 @@ final class SplitViewModel: ObservableObject {
 
         isFinalizing = false
     }
+
+    // MARK: - Status Polling
+
+    func refreshStatus() async {
+        guard let token = shareableURL?.components(separatedBy: "/s/").last, !token.isEmpty else { return }
+        do {
+            let response = try await ReceiptService.getSplitByToken(token: token)
+            self.splitResult = SplitResult(
+                balances: response.appBalances,
+                assignedSubtotal: splitResult?.assignedSubtotal ?? 0
+            )
+        } catch {
+            // Silently ignore background polling errors
+        }
+    }
 }

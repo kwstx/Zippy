@@ -239,6 +239,14 @@ struct SplitView: View {
                             .fontWeight(.bold)
                             .foregroundColor(.white)
                         Spacer()
+                        if balance.isPaid {
+                            Text("PAID")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .foregroundColor(.black)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.white)
+                        }
                     }
                     .padding(.top, 14)
 

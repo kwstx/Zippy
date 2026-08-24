@@ -25,6 +25,9 @@ struct SplitSessionResponse: Decodable {
         let taxShare: Double
         let tipShare: Double
         let total: Double
+        let isPaid: Bool?
+        let paidAt: Date?
+        let paymentMethod: String?
     }
 }
 
@@ -38,7 +41,10 @@ extension SplitSessionResponse {
                 itemsSubtotal: $0.itemsSubtotal,
                 taxShare: $0.taxShare,
                 tipShare: $0.tipShare,
-                total: $0.total
+                total: $0.total,
+                isPaid: $0.isPaid ?? false,
+                paidAt: $0.paidAt,
+                paymentMethod: $0.paymentMethod
             )
         }
     }

@@ -14,9 +14,18 @@ func routes(_ app: Application) throws {
         api.group("splits") { splits in
             splits.post(use: splitController.create)
             splits.get(":id", use: splitController.get)
+            splits.get("token", ":token", use: splitController.getByToken)
+            splits.post(":token", "pay", use: splitController.processGuestPayment)
+            splits.get(":token", "status", use: splitController.getStatus)
         }
     }
     
-    // Short URL shareable link endpoint
-    app.get("s", ":token", use: splitController.getByToken)
+    // Short URL shareable guest endpoints (unauthenticated web access)
+    app.group("s", ":token") { guest in
+        guest.get(use: splitController.getByToken)
+        guest.get("view", use: splitController.viewGuestHTML)
+        guest.post("pay", use: splitController.processGuestPayment)
+        guest.get("status", use: splitController.getStatus)
+    }
 }
+
