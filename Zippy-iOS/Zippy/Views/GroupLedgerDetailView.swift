@@ -206,7 +206,7 @@ struct GroupLedgerDetailView: View {
                     .font(.system(size: 9, weight: .bold, design: .monospaced))
                     .foregroundColor(Color(white: 0.4))
 
-                let balance = viewModel.group?.runningBalance ?? initialGroup.runningBalance ?? 0.0
+                let balance = viewModel.group?.runningBalance ?? initialGroup.runningBalance
                 CurrencyText(
                     balance,
                     currency: viewModel.groupCurrency,

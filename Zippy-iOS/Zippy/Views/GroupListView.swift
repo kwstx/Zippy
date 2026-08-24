@@ -166,7 +166,7 @@ struct GroupListView: View {
                     .foregroundColor(.black)
                     .lineLimit(1)
 
-                Text("BASE: \(group.currency ?? "USD")")
+                Text("BASE: \(group.currency)")
                     .font(.system(size: 9, weight: .light, design: .monospaced))
                     .foregroundColor(Color(white: 0.5))
             }
@@ -175,8 +175,8 @@ struct GroupListView: View {
 
             // Single Monochrome Balance Figure
             CurrencyText(
-                group.runningBalance ?? 0.0,
-                currency: group.currency ?? "USD",
+                group.runningBalance,
+                currency: group.currency,
                 font: .system(size: 16, weight: .bold, design: .monospaced),
                 amountWeight: .bold,
                 codeWeight: .light

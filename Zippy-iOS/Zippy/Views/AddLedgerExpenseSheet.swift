@@ -21,7 +21,7 @@ struct AddLedgerExpenseSheet: View {
         let initialPayer = group.members.first?.id ?? UUID()
         _selectedPayerId = State(initialValue: initialPayer)
         _selectedSplitMemberIds = State(initialValue: Set(group.members.map { $0.id }))
-        _currency = State(initialValue: group.currency ?? "USD")
+        _currency = State(initialValue: group.currency)
     }
 
     var body: some View {

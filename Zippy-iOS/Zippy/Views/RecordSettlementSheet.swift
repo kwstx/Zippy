@@ -21,7 +21,7 @@ struct RecordSettlementSheet: View {
         let second = group.members.count > 1 ? group.members[1].id : first
         _payerId = State(initialValue: first)
         _payeeId = State(initialValue: second)
-        _currency = State(initialValue: group.currency ?? "USD")
+        _currency = State(initialValue: group.currency)
     }
 
     var body: some View {

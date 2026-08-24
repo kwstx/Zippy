@@ -124,6 +124,10 @@ struct LedgerEvent: Identifiable, Codable, Equatable, Hashable {
         currency ?? "USD"
     }
 
+    var effectiveTargetCurrency: String {
+        targetCurrency ?? currency ?? "USD"
+    }
+
     var isSettlement: Bool {
         eventType.lowercased() == "settlement"
     }
@@ -141,6 +145,10 @@ struct GroupMemberBalance: Identifiable, Codable, Equatable, Hashable {
     let netBalance: Double
     let formattedBalance: String
     var currency: String = "USD"
+
+    var balance: Double {
+        netBalance
+    }
 
     init(
         participantId: UUID,
