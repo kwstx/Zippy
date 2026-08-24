@@ -5,6 +5,7 @@ func routes(_ app: Application) throws {
     let splitController = SplitController()
     let groupController = GroupController()
     let reminderController = ReminderController()
+    let recurringController = RecurringExpenseController()
     
     app.group("api") { api in
         api.group("groups") { groups in
@@ -18,6 +19,17 @@ func routes(_ app: Application) throws {
             groups.post(":id", "expenses", use: groupController.addExpense)
             groups.post(":id", "settlements", use: groupController.addSettlement)
             groups.delete(":id", use: groupController.delete)
+            
+            // Recurring Expense Templates
+            groups.get(":id", "recurring-expenses", use: recurringController.list)
+            groups.post(":id", "recurring-expenses", use: recurringController.create)
+            groups.delete(":id", "recurring-expenses", ":templateId", use: recurringController.delete)
+            groups.post(":id", "recurring-expenses", ":templateId", "toggle", use: recurringController.toggleActive)
+            groups.post(":id", "recurring-expenses", "process", use: recurringController.processDue)
+        }
+        
+        api.group("recurring-expenses") { recurring in
+            recurring.post("process", use: recurringController.processDue)
         }
         
         api.group("receipts") { receipts in

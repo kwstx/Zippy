@@ -141,6 +141,14 @@ struct GroupController {
             throw Abort(.notFound, reason: "Group not found.")
         }
 
+        // Process any due recurring expenses for this group so they appear automatically in history
+        _ = try? await RecurringExpenseService.processDueTemplates(
+            db: req.db,
+            logger: req.logger,
+            client: req.client,
+            groupId: id
+        )
+
         let groupCurrency = group.currency ?? "USD"
         let events = try await LedgerEvent.query(on: req.db)
             .filter(\.$groupId == id)

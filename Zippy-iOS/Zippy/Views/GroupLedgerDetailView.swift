@@ -11,6 +11,8 @@ struct GroupLedgerDetailView: View {
     @State private var showingAddExpenseSheet = false
     @State private var showingRecordSettlementSheet = false
     @State private var showingSimplifiedPaymentsSheet = false
+    @State private var showingRecurringTemplatesSheet = false
+    @State private var showingAddRecurringExpenseSheet = false
 
     init(group: PersistentGroup) {
         self.initialGroup = group
@@ -75,6 +77,7 @@ struct GroupLedgerDetailView: View {
                 }
                 .refreshable {
                     viewModel.loadHistory()
+                    viewModel.loadRecurringTemplates()
                 }
             }
 
@@ -94,10 +97,21 @@ struct GroupLedgerDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button(action: { viewModel.loadHistory() }) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                        .foregroundColor(.black)
+                HStack(spacing: 12) {
+                    Button(action: { showingRecurringTemplatesSheet = true }) {
+                        Image(systemName: "clock.arrow.2.circlepath")
+                            .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                            .foregroundColor(.black)
+                    }
+
+                    Button(action: {
+                        viewModel.loadHistory()
+                        viewModel.loadRecurringTemplates()
+                    }) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                            .foregroundColor(.black)
+                    }
                 }
             }
         }
@@ -115,6 +129,29 @@ struct GroupLedgerDetailView: View {
                         )
                     }
                 }
+            }
+        }
+        .sheet(isPresented: $showingAddRecurringExpenseSheet) {
+            if let activeGroup = viewModel.group ?? Optional(initialGroup) {
+                AddRecurringExpenseSheet(group: activeGroup) { title, amount, currency, payerId, splitIds, freq, note, startDate in
+                    Task {
+                        _ = await viewModel.addRecurringExpense(
+                            title: title,
+                            amount: amount,
+                            currency: currency,
+                            payerId: payerId,
+                            splitMemberIds: splitIds,
+                            frequency: freq,
+                            note: note,
+                            startDate: startDate
+                        )
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showingRecurringTemplatesSheet) {
+            if let activeGroup = viewModel.group ?? Optional(initialGroup) {
+                RecurringTemplatesListView(group: activeGroup, viewModel: viewModel)
             }
         }
         .sheet(isPresented: $showingRecordSettlementSheet) {
@@ -142,6 +179,7 @@ struct GroupLedgerDetailView: View {
         }
         .onAppear {
             viewModel.loadHistory()
+            viewModel.loadRecurringTemplates()
         }
     }
 
@@ -344,16 +382,30 @@ struct GroupLedgerDetailView: View {
     // MARK: - Ledger Event Row
     @ViewBuilder
     private func ledgerEventRow(_ event: LedgerEvent) -> some View {
+        let isRecurring = (event.note?.contains("[Recurring") == true)
+
         VStack(alignment: .leading, spacing: 8) {
             // Header: Type badge, Date, Amount
             HStack(alignment: .center) {
                 if event.isExpense {
-                    Text("EXPENSE")
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.black)
+                    HStack(spacing: 4) {
+                        Text("EXPENSE")
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.black)
+
+                        if isRecurring {
+                            Text("RECURRING")
+                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                .foregroundColor(.black)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Color(white: 0.92))
+                                .overlay(Rectangle().stroke(Color.black, lineWidth: 0.8))
+                        }
+                    }
                 } else {
                     Text("SETTLEMENT")
                         .font(.system(size: 9, weight: .bold, design: .monospaced))
@@ -469,25 +521,41 @@ struct GroupLedgerDetailView: View {
                 .fill(Color.black)
                 .frame(height: 1)
 
-            HStack(spacing: 12) {
+            HStack(spacing: 8) {
                 Button(action: { showingAddExpenseSheet = true }) {
-                    HStack {
+                    HStack(spacing: 4) {
                         Image(systemName: "plus")
-                        Text("ADD EXPENSE")
+                            .font(.system(size: 11, weight: .bold))
+                        Text("EXPENSE")
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
                     }
-                    .font(.system(size: 12, weight: .bold, design: .monospaced))
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
                     .background(Color.black)
                 }
 
-                Button(action: { showingRecordSettlementSheet = true }) {
-                    HStack {
-                        Image(systemName: "arrow.left.arrow.right")
-                        Text("SETTLE")
+                Button(action: { showingRecurringTemplatesSheet = true }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock.arrow.2.circlepath")
+                            .font(.system(size: 11, weight: .bold))
+                        Text("RECURRING")
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
                     }
-                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .foregroundColor(.black)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color.white)
+                    .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
+                }
+
+                Button(action: { showingRecordSettlementSheet = true }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.left.arrow.right")
+                            .font(.system(size: 11, weight: .bold))
+                        Text("SETTLE")
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    }
                     .foregroundColor(.black)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
@@ -495,8 +563,8 @@ struct GroupLedgerDetailView: View {
                     .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
             .background(Color.white)
         }
     }

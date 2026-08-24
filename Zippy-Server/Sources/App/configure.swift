@@ -56,6 +56,7 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(CreateLedgerEventMigration())
     app.migrations.add(AddMultiCurrencySupportMigration())
     app.migrations.add(CreatePaymentReminderLogMigration())
+    app.migrations.add(CreateRecurringExpenseTemplateMigration())
     
     // Auto-migrate in development
     try await app.autoMigrate()
@@ -64,6 +65,11 @@ public func configure(_ app: Application) async throws {
     let reminderJob = PaymentReminderScheduledJob(app: app)
     app.storage[PaymentReminderJobKey.self] = reminderJob
     reminderJob.start()
+
+    // Start background scheduled cron job for recurring expense template cloning
+    let recurringJob = RecurringExpenseScheduledJob(app: app)
+    app.storage[RecurringExpenseJobKey.self] = recurringJob
+    recurringJob.start()
 
     // register routes
     try routes(app)

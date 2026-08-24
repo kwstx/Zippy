@@ -194,4 +194,119 @@ enum GroupService {
             throw URLError(.badServerResponse)
         }
     }
+
+    // MARK: - Recurring Expenses
+
+    /// Fetches all recurring expense templates configured for a group.
+    static func fetchRecurringExpenses(groupId: UUID) async throws -> [RecurringExpenseTemplate] {
+        guard let url = URL(string: "\(baseURL)/\(groupId.uuidString)/recurring-expenses") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            let errorText = String(data: data, encoding: .utf8) ?? "Failed to fetch recurring templates"
+            throw NSError(domain: "GroupService", code: (response as? HTTPURLResponse)?.statusCode ?? 0, userInfo: [NSLocalizedDescriptionKey: errorText])
+        }
+
+        return try jsonDecoder.decode([RecurringExpenseTemplate].self, from: data)
+    }
+
+    /// Stores a new recurring expense template on the backend.
+    static func createRecurringExpense(
+        groupId: UUID,
+        title: String,
+        amount: Double,
+        currency: String = "USD",
+        payerId: UUID,
+        splitMemberIds: [UUID]? = nil,
+        splits: [AddGroupExpensePayload.LedgerSplitPayload]? = nil,
+        frequency: RecurringFrequency = .monthly,
+        note: String? = nil,
+        startDate: Date? = nil
+    ) async throws -> RecurringExpenseTemplate {
+        guard let url = URL(string: "\(baseURL)/\(groupId.uuidString)/recurring-expenses") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let payload = CreateRecurringExpensePayload(
+            title: title,
+            amount: amount,
+            currency: currency,
+            payerId: payerId,
+            splitMemberIds: splitMemberIds,
+            splits: splits,
+            frequency: frequency.rawValue,
+            note: note,
+            startDate: startDate
+        )
+        request.httpBody = try jsonEncoder.encode(payload)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            let errorText = String(data: data, encoding: .utf8) ?? "Failed to create recurring template"
+            throw NSError(domain: "GroupService", code: (response as? HTTPURLResponse)?.statusCode ?? 0, userInfo: [NSLocalizedDescriptionKey: errorText])
+        }
+
+        return try jsonDecoder.decode(RecurringExpenseTemplate.self, from: data)
+    }
+
+    /// Deletes a recurring expense template.
+    static func deleteRecurringExpense(groupId: UUID, templateId: UUID) async throws {
+        guard let url = URL(string: "\(baseURL)/\(groupId.uuidString)/recurring-expenses/\(templateId.uuidString)") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+    }
+
+    /// Toggles the active state of a recurring expense template.
+    static func toggleRecurringExpense(groupId: UUID, templateId: UUID) async throws -> RecurringExpenseTemplate {
+        guard let url = URL(string: "\(baseURL)/\(groupId.uuidString)/recurring-expenses/\(templateId.uuidString)/toggle") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            let errorText = String(data: data, encoding: .utf8) ?? "Failed to toggle recurring template"
+            throw NSError(domain: "GroupService", code: (response as? HTTPURLResponse)?.statusCode ?? 0, userInfo: [NSLocalizedDescriptionKey: errorText])
+        }
+
+        return try jsonDecoder.decode(RecurringExpenseTemplate.self, from: data)
+    }
+
+    /// Triggers immediate cron-like cloning evaluation for recurring templates in a group.
+    static func processRecurringExpenses(groupId: UUID) async throws -> ProcessRecurringExpensesResponse {
+        guard let url = URL(string: "\(baseURL)/\(groupId.uuidString)/recurring-expenses/process") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            let errorText = String(data: data, encoding: .utf8) ?? "Failed to process recurring expenses"
+            throw NSError(domain: "GroupService", code: (response as? HTTPURLResponse)?.statusCode ?? 0, userInfo: [NSLocalizedDescriptionKey: errorText])
+        }
+
+        return try jsonDecoder.decode(ProcessRecurringExpensesResponse.self, from: data)
+    }
 }
