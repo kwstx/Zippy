@@ -102,13 +102,14 @@ struct UpdateCategoryRequest: Content {
     let category: String?
 }
 
-/// Query parameters for history and search filtering.
+/// Query parameters for history and search filtering and CSV/PDF export.
 struct HistoryFilterQuery: Content {
     let category: String?
     let search: String?
     let limit: Int?
     let offset: Int?
     let currency: String?
+    let format: String?
 }
 
 /// A historical entry returned by history & search filters.

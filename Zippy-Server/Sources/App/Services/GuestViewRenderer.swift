@@ -671,7 +671,8 @@ enum GuestViewRenderer {
                         <span id="collectedText">\(formatCurrency(totalCollected, currency: sessionCurrency)) collected</span>
                         <span id="remainingText">\(formatCurrency(max(0, receiptTotal - totalCollected), currency: sessionCurrency)) remaining</span>
                     </div>
-                    <div style="margin-top: 10px; text-align: right;">
+                    <div style="margin-top: 10px; display: flex; justify-content: space-between; align-items: center;">
+                        <a href="/s/\(token)/status-screen" style="font-family: var(--font-mono); font-size: 11px; color: var(--text); text-decoration: underline; text-transform: uppercase; letter-spacing: 0.05em;">Payment status →</a>
                         <a href="/s/\(token)/simplified" style="font-family: var(--font-mono); font-size: 11px; color: var(--text); text-decoration: underline; text-transform: uppercase; letter-spacing: 0.05em;">Simplified payments →</a>
                     </div>
                 </div>
@@ -1520,6 +1521,202 @@ enum GuestViewRenderer {
                     <span class="footer-tagline">Split bills instantly · No app required</span>
                 </div>
             </div>
+        </body>
+        </html>
+        """
+    }
+
+    /// Renders a pure white minimalist status screen displaying ONLY a black checkmark
+    /// or an empty black circle next to each participant name.
+    public static func renderWhiteStatusScreen(
+        session: SplitSession,
+        receipt: ExtractedReceipt?,
+        token: String,
+        baseURL: String
+    ) -> String {
+        let balances = session.balances
+        let title = receipt?.items.first?.name ?? "Bill Split"
+        let backURL = "/s/\(token)"
+
+        let rowsHTML = balances.map { b in
+            let isSettled = b.isPaid || b.settlementStatus == .settled
+            let checkmarkSVG = """
+            <svg class="status-icon icon-check" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#000000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+            """
+            let emptyCircleSVG = """
+            <svg class="status-icon icon-circle" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#000000" stroke-width="2">
+                <circle cx="12" cy="12" r="9"></circle>
+            </svg>
+            """
+            let indicator = isSettled ? checkmarkSVG : emptyCircleSVG
+
+            return """
+            <div class="participant-status-row" data-id="\(b.participantId.uuidString)">
+                <span class="participant-name">\(escapeHTML(b.name))</span>
+                <span class="status-indicator">\(indicator)</span>
+            </div>
+            """
+        }.joined(separator: "\n")
+
+        return """
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+            <meta name="theme-color" content="#FFFFFF">
+            <title>Payment Status</title>
+            <style>
+                *, *::before, *::after {
+                    box-sizing: border-box;
+                    margin: 0;
+                    padding: 0;
+                    -webkit-font-smoothing: antialiased;
+                }
+                body {
+                    background-color: #FFFFFF;
+                    color: #000000;
+                    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Mono", Menlo, Monaco, Consolas, "Segoe UI", Roboto, sans-serif;
+                    line-height: 1.5;
+                    min-height: 100vh;
+                    padding: 48px 24px 64px 24px;
+                }
+                .container {
+                    max-width: 440px;
+                    margin: 0 auto;
+                }
+                .header-label {
+                    font-family: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+                    font-size: 11px;
+                    font-weight: 700;
+                    letter-spacing: 0.1em;
+                    text-transform: uppercase;
+                    color: #000000;
+                    margin-bottom: 8px;
+                }
+                h1 {
+                    font-size: 32px;
+                    font-weight: 700;
+                    letter-spacing: -0.03em;
+                    color: #000000;
+                    margin-bottom: 24px;
+                }
+                .divider-top {
+                    height: 2px;
+                    background-color: #000000;
+                    margin-bottom: 8px;
+                }
+                .status-list {
+                    display: flex;
+                    flex-direction: column;
+                }
+                .participant-status-row {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    padding: 18px 4px;
+                    border-bottom: 1px solid #EAEAEA;
+                }
+                .participant-status-row:last-child {
+                    border-bottom: 1px solid #000000;
+                }
+                .participant-name {
+                    font-size: 17px;
+                    font-weight: 600;
+                    color: #000000;
+                    letter-spacing: -0.01em;
+                }
+                .status-indicator {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 28px;
+                    height: 28px;
+                }
+                .status-icon {
+                    display: block;
+                }
+                .back-link {
+                    display: inline-block;
+                    margin-top: 32px;
+                    font-family: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+                    font-size: 12px;
+                    font-weight: 600;
+                    color: #000000;
+                    text-decoration: underline;
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                }
+                .back-link:hover {
+                    opacity: 0.7;
+                }
+                .footer {
+                    margin-top: 56px;
+                    padding-top: 24px;
+                    border-top: 1px solid #EAEAEA;
+                    text-align: center;
+                    font-family: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+                    font-size: 11px;
+                    color: #6B6B6B;
+                    letter-spacing: 0.05em;
+                }
+                .footer-invite-link {
+                    color: #000000;
+                    text-decoration: underline;
+                    text-underline-offset: 3px;
+                    font-weight: 700;
+                    text-transform: uppercase;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header-label">Zippy · Status</div>
+                <h1>Payment Status</h1>
+                <div class="divider-top"></div>
+
+                <div class="status-list" id="statusList">
+                    \(rowsHTML)
+                </div>
+
+                <a href="\(backURL)" class="back-link">← Back to bill</a>
+
+                <div class="footer">
+                    <span>Made with </span><a href="\(baseURL)" class="footer-invite-link" target="_blank" rel="noopener noreferrer">Zippy</a>
+                </div>
+            </div>
+
+            <script>
+                const SESSION_TOKEN = "\(token)";
+                const CHECKMARK_HTML = `<svg class="status-icon icon-check" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#000000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+                const CIRCLE_HTML = `<svg class="status-icon icon-circle" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#000000" stroke-width="2"><circle cx="12" cy="12" r="9"></circle></svg>`;
+
+                async function pollStatus() {
+                    try {
+                        const res = await fetch('/s/' + SESSION_TOKEN + '/status');
+                        if (res.ok) {
+                            const data = await res.json();
+                            if (data.participants) {
+                                data.participants.forEach(p => {
+                                    const row = document.querySelector('.participant-status-row[data-id="' + p.id + '"]');
+                                    if (row) {
+                                        const ind = row.querySelector('.status-indicator');
+                                        const isSettled = p.isPaid || p.settlementStatus === 'settled';
+                                        ind.innerHTML = isSettled ? CHECKMARK_HTML : CIRCLE_HTML;
+                                    }
+                                });
+                            }
+                        }
+                    } catch (e) {
+                        // ignore polling network errors
+                    }
+                }
+
+                // Poll every 3 seconds for real-time status updates
+                setInterval(pollStatus, 3000);
+            </script>
         </body>
         </html>
         """

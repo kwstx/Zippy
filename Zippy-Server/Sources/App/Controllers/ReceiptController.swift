@@ -334,4 +334,49 @@ struct ReceiptController {
 
         return receipts
     }
+
+    /// Streams exported receipts as pure-Swift CSV or PDF format.
+    @Sendable
+    func export(req: Request) async throws -> Response {
+        let receipts = try await list(req: req)
+        let query = try? req.query.decode(HistoryFilterQuery.self)
+        let format = query?.format?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? "csv"
+        let category = query?.category?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let search = query?.search?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let items: [HistoryItemDTO] = receipts.map { receipt in
+            let title = receipt.items.first?.name ?? "Receipt (\(receipt.referenceId.prefix(6)))"
+            let itemsSummary = receipt.items.prefix(4).map(\.name)
+            return HistoryItemDTO(
+                id: receipt.id ?? UUID(),
+                receiptId: receipt.id,
+                title: title,
+                category: receipt.category,
+                total: receipt.total,
+                currency: receipt.currency ?? "USD",
+                convertedTotal: receipt.convertedTotal ?? receipt.total,
+                targetCurrency: receipt.targetCurrency ?? receipt.currency ?? "USD",
+                exchangeRate: receipt.exchangeRate ?? 1.0,
+                createdAt: receipt.createdAt,
+                participantCount: 0,
+                isSettled: false,
+                shareableURL: nil,
+                itemsSummary: Array(itemsSummary)
+            )
+        }
+
+        if format == "pdf" {
+            return ExportStreamingService.streamPDF(
+                items: items,
+                categoryFilter: category,
+                searchQuery: search,
+                req: req
+            )
+        } else {
+            return ExportStreamingService.streamCSV(
+                items: items,
+                req: req
+            )
+        }
+    }
 }

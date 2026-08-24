@@ -533,6 +533,34 @@ struct SplitController {
         )
     }
 
+    /// Renders the minimalist pure white status screen displaying only participant names and a black checkmark or empty black circle.
+    @Sendable
+    func viewWhiteStatusScreen(req: Request) async throws -> Response {
+        guard let token = req.parameters.get("token") else {
+            throw Abort(.badRequest, reason: "Missing share token.")
+        }
+
+        guard let session = try await SplitSession.query(on: req.db)
+            .filter(\.$shareToken == token)
+            .first() else {
+            throw Abort(.notFound, reason: "No split session found for token: \(token)")
+        }
+
+        let receipt = try await ExtractedReceipt.find(session.receiptId, on: req.db)
+        let baseURL = Environment.get("BASE_URL") ?? "http://localhost:8080"
+
+        let html = GuestViewRenderer.renderWhiteStatusScreen(
+            session: session,
+            receipt: receipt,
+            token: token,
+            baseURL: baseURL
+        )
+
+        var headers = HTTPHeaders()
+        headers.add(name: .contentType, value: "text/html; charset=utf-8")
+        return Response(status: .ok, headers: headers, body: .init(string: html))
+    }
+
     /// Optimizes multiple expenses into minimal direct transfers.
     @Sendable
     func simplifyExpenses(req: Request) async throws -> SimplifyExpensesResponse {
@@ -726,20 +754,26 @@ struct SplitController {
         return Self.makeSplitSessionResponse(session: session, receipt: receipt, req: req)
     }
 
-    /// Returns past split sessions and receipts filtered by optional category tag, search query, and currency.
+    /// Returns past split sessions and receipts filtered by optional category tag, search query, and currency from PostgreSQL.
     @Sendable
     func getHistory(req: Request) async throws -> [HistoryItemDTO] {
         let query = try? req.query.decode(HistoryFilterQuery.self)
         let categoryFilter = query?.category?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let searchTerm = query?.search?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
-        let allSessions = try await SplitSession.query(on: req.db)
-            .sort(\.$createdAt, .descending)
-            .all()
+        // 1. Query PostgreSQL for SplitSessions with category filter if specified
+        var sessionQuery = SplitSession.query(on: req.db)
+        if let category = categoryFilter, !category.isEmpty, category != "all" {
+            sessionQuery = sessionQuery.filter(\.$category == category)
+        }
+        let allSessions = try await sessionQuery.sort(\.$createdAt, .descending).all()
 
-        let allReceipts = try await ExtractedReceipt.query(on: req.db)
-            .sort(\.$createdAt, .descending)
-            .all()
+        // 2. Query PostgreSQL for ExtractedReceipts with category filter if specified
+        var receiptDbQuery = ExtractedReceipt.query(on: req.db)
+        if let category = categoryFilter, !category.isEmpty, category != "all" {
+            receiptDbQuery = receiptDbQuery.filter(\.$category == category)
+        }
+        let allReceipts = try await receiptDbQuery.sort(\.$createdAt, .descending).all()
 
         let receiptMap = Dictionary(uniqueKeysWithValues: allReceipts.compactMap { r in
             r.id != nil ? (r.id!, r) : nil
@@ -821,7 +855,7 @@ struct SplitController {
             ))
         }
 
-        // Apply Category Filter
+        // Apply Category Filter in memory as fallback for joint records
         if let category = categoryFilter, !category.isEmpty, category != "all" {
             historyItems = historyItems.filter { item in
                 guard let cat = item.category?.lowercased() else { return false }
@@ -829,7 +863,7 @@ struct SplitController {
             }
         }
 
-        // Apply Keyword Search Filter
+        // Apply Keyword Search Filter across title, category, line items, currency, total
         if let search = searchTerm, !search.isEmpty {
             historyItems = historyItems.filter { item in
                 let matchesTitle = item.title.lowercased().contains(search)
@@ -842,5 +876,31 @@ struct SplitController {
         }
 
         return historyItems
+    }
+
+    /// Exports filtered expense history as a streamed CSV or pure-Swift PDF document.
+    @Sendable
+    func exportHistory(req: Request) async throws -> Response {
+        let items = try await getHistory(req: req)
+        let query = try? req.query.decode(HistoryFilterQuery.self)
+        let format = query?.format?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? "csv"
+        let category = query?.category?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let search = query?.search?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        req.logger.info("Exporting \(items.count) expense history item(s) as \(format.uppercased())")
+
+        if format == "pdf" {
+            return ExportStreamingService.streamPDF(
+                items: items,
+                categoryFilter: category,
+                searchQuery: search,
+                req: req
+            )
+        } else {
+            return ExportStreamingService.streamCSV(
+                items: items,
+                req: req
+            )
+        }
     }
 }

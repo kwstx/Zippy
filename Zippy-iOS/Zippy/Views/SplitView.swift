@@ -12,6 +12,7 @@ struct SplitView: View {
     @State private var isLinkCopied: Bool = false
     @State private var expandedParticipantId: UUID?
     @State private var showingSimplifiedPayments: Bool = false
+    @State private var showingStatusScreen: Bool = false
 
     init(receipt: ExtractedReceiptResponse) {
         _viewModel = StateObject(wrappedValue: SplitViewModel(receipt: receipt))
@@ -84,6 +85,19 @@ struct SplitView: View {
         .navigationTitle("Split")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button(action: { showingStatusScreen = true }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark.circle")
+                            .font(.system(size: 13, design: .monospaced))
+                        Text("Status")
+                            .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    }
+                    .foregroundColor(.white)
+                }
+            }
+        }
         .task {
             // Background polling loop if session is finalized
             while !Task.isCancelled {
@@ -102,6 +116,12 @@ struct SplitView: View {
             SimplifiedPaymentsView(
                 transfers: viewModel.simplifiedPayments,
                 currency: viewModel.receipt.effectiveCurrency
+            )
+        }
+        .sheet(isPresented: $showingStatusScreen) {
+            PaymentStatusView(
+                token: viewModel.shareableURL?.components(separatedBy: "/s/").last,
+                initialBalances: viewModel.splitResult?.balances ?? []
             )
         }
         .alert("Add Person", isPresented: $showingAddParticipant) {
@@ -301,6 +321,28 @@ struct SplitView: View {
                     thinDivider()
                 }
             }
+
+            // Payment Status Screen Button (Minimalist White Screen)
+            Button(action: {
+                showingStatusScreen = true
+            }) {
+                HStack {
+                    Image(systemName: "circle.inset.filled")
+                        .font(.system(size: 11, design: .monospaced))
+                    Text("PAYMENT STATUS")
+                        .font(.system(.caption2, design: .monospaced))
+                        .fontWeight(.bold)
+                    Spacer()
+                    Text("→")
+                        .font(.system(.caption, design: .monospaced))
+                }
+                .foregroundColor(.white)
+                .padding(.vertical, 14)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            thinDivider()
 
             // Simplified Payments Button
             Button(action: {

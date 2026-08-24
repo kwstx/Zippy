@@ -55,9 +55,15 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(CreatePersistentGroupMigration())
     app.migrations.add(CreateLedgerEventMigration())
     app.migrations.add(AddMultiCurrencySupportMigration())
+    app.migrations.add(CreatePaymentReminderLogMigration())
     
     // Auto-migrate in development
     try await app.autoMigrate()
+
+    // Start background scheduled job for unsettled payment tracking & reminders
+    let reminderJob = PaymentReminderScheduledJob(app: app)
+    app.storage[PaymentReminderJobKey.self] = reminderJob
+    reminderJob.start()
 
     // register routes
     try routes(app)

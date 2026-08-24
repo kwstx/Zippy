@@ -637,14 +637,157 @@ enum ReceiptService {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         let (data, response) = try await URLSession.shared.data(for: request)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode([HistoryItem].self, from: data)
+    }
+
+    /// Streams an exported CSV or pure-Swift PDF expense report from the backend.
+    /// - Parameters:
+    ///   - format: "csv" or "pdf"
+    ///   - category: Optional category filter
+    ///   - search: Optional search query
+    /// - Returns: A tuple with the downloaded raw Data, the suggested filename, and the mime type.
+    static func exportHistory(
+        format: String = "csv",
+        category: ReceiptCategory? = nil,
+        search: String? = nil
+    ) async throws -> (data: Data, filename: String, mimeType: String) {
+        var components = URLComponents(string: "http://localhost:8080/api/splits/history/export")
+        var queryItems: [URLQueryItem] = [
+            URLQueryItem(name: "format", value: format)
+        ]
+
+        if let cat = category {
+            queryItems.append(URLQueryItem(name: "category", value: cat.rawValue))
+        }
+        if let q = search, !q.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            queryItems.append(URLQueryItem(name: "search", value: q.trimmingCharacters(in: .whitespacesAndNewlines)))
+        }
+
+        components?.queryItems = queryItems
+
+        guard let url = components?.url else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+
+        // Extract filename from Content-Disposition header if available
+        var filename = format == "pdf" ? "expenses.pdf" : "expenses.csv"
+        if let disposition = httpResponse.allHeaderFields["Content-Disposition"] as? String ?? httpResponse.allHeaderFields["content-disposition"] as? String {
+            if let range = disposition.range(of: "filename=\"") {
+                let suffix = disposition[range.upperBound...]
+                if let endQuote = suffix.firstIndex(of: "\"") {
+                    filename = String(suffix[..<endQuote])
+                }
+            }
+        }
+
+        let mimeType = format == "pdf" ? "application/pdf" : "text/csv"
+        return (data, filename, mimeType)
+    }
+
+    /// Fetches live status and participant payment settlements for background sync and status screen.
+    static func fetchSplitStatus(token: String) async throws -> SplitStatusAPIResponse {
+        guard let url = URL(string: "http://localhost:8080/s/\(token)/status") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
             throw URLError(.badServerResponse)
         }
 
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode([HistoryItem].self, from: data)
+        return try decoder.decode(SplitStatusAPIResponse.self, from: data)
     }
+
+    /// Triggers an immediate backend scan of unsettled records, dispatching silent push notifications and emails.
+    static func triggerReminderScan() async throws -> ReminderScanReport {
+        guard let url = URL(string: "http://localhost:8080/api/reminders/scan") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(ReminderScanReport.self, from: data)
+    }
+
+    /// Triggers immediate reminders targeted for a single session token.
+    static func triggerSessionReminders(token: String) async throws -> ReminderScanReport {
+        guard let url = URL(string: "http://localhost:8080/api/reminders/sessions/\(token)") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(ReminderScanReport.self, from: data)
+    }
+}
+
+/// DTO returned by `/status` endpoint
+struct SplitStatusAPIResponse: Decodable {
+    let sessionId: UUID
+    let total: Double
+    let totalCollected: Double
+    let currency: String
+    let isFullySettled: Bool
+    let participants: [ParticipantStatusDTO]
+
+    struct ParticipantStatusDTO: Decodable, Identifiable {
+        let id: UUID
+        let name: String
+        let total: Double
+        let currency: String
+        let convertedTotal: Double?
+        let isPaid: Bool
+        let settlementStatus: SettlementStatus
+        let paidAt: Date?
+        let paymentMethod: String?
+    }
+}
+
+/// DTO returned by reminder scan operations
+struct ReminderScanReport: Decodable {
+    let success: Bool
+    let totalSessionsScanned: Int
+    let totalGroupsScanned: Int
+    let totalUnsettledRecords: Int
+    let silentNotificationsPushed: Int
+    let emailsSent: Int
+    let skippedDueToCooldown: Int
+    let message: String
 }
 
 /// A historical receipt or split session entry returned by search/history filtering.
