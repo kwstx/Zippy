@@ -3,6 +3,7 @@ options:
   bundleIdPrefix: com.zippy
   deploymentTarget:
     iOS: "16.0"
+  xcodeVersion: "15.0"
 settings:
   base:
     SWIFT_VERSION: "5.0"
