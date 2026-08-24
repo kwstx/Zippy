@@ -1,7 +1,7 @@
 import Foundation
 
 /// Pure logic calculation service for replaying append-only ledger event streams
-/// and maintaining running balances across persistent groups.
+/// and maintaining running balances across persistent groups with multi-currency support.
 public enum GroupLedgerService {
 
     /// Structure representing a calculated snapshot of member balances at a point in the event stream.
@@ -10,25 +10,26 @@ public enum GroupLedgerService {
         public var totalVolume: Double
     }
 
-    /// Formats a balance as a clean single monochrome figure.
-    /// Examples: "+$42.50", "-$15.00", "$0.00"
-    public static func formatMonochromeBalance(_ value: Double) -> String {
+    /// Formats a balance as a clean single monochrome figure with currency code.
+    /// Follows the plain black text rule with currency code.
+    public static func formatMonochromeBalance(_ value: Double, currency: String = "USD") -> String {
         let rounded = (value * 100).rounded() / 100
         if abs(rounded) < 0.005 {
-            return "$0.00"
+            return "0.00 \(currency)"
         } else if rounded > 0 {
-            return String(format: "+$%.2f", rounded)
+            return String(format: "+%.2f %@", rounded, currency)
         } else {
-            return String(format: "-$%.2f", abs(rounded))
+            return String(format: "-%.2f %@", abs(rounded), currency)
         }
     }
 
     /// Replays the append-only event stream in strict chronological order and calculates
-    /// the authoritative running balances for all members and event snapshots,
-    /// continuously simplifying debts across all expenses using the pure-Swift graph algorithm.
+    /// the authoritative running balances for all members and event snapshots in the group's base currency,
+    /// continuously simplifying debts across all expenses.
     public static func computeLedgerState(
         members: [ParticipantDTO],
-        events: [LedgerEvent]
+        events: [LedgerEvent],
+        groupCurrency: String = "USD"
     ) -> (
         currentBalances: [UUID: Double],
         memberBalancesDTO: [GroupMemberBalanceDTO],
@@ -38,7 +39,7 @@ public enum GroupLedgerService {
         simplifiedLines: [String],
         totalTransferred: Double
     ) {
-        // Initialize all member balances to zero
+        // Initialize all member balances to zero in group currency
         var runningBalances: [UUID: Double] = [:]
         for member in members {
             runningBalances[member.id] = 0.0
@@ -58,25 +59,26 @@ public enum GroupLedgerService {
 
         for event in sortedEvents {
             let eventType = event.eventType.lowercased()
+            // Effective converted amount in group base currency
+            let effectiveTotal = event.convertedAmount ?? event.amount
 
             if eventType == "expense" {
                 let payerId = event.payerId
-                let totalAmount = event.amount
 
-                // Record allocations
+                // Record allocations in base currency
                 var totalAllocated = 0.0
                 for split in event.splits {
                     let memberId = split.memberId
-                    let splitAmount = split.amount
+                    let splitAmount = split.convertedAmount ?? split.amount
                     totalAllocated += splitAmount
 
-                    // Each member's net balance decreases by what they owe
+                    // Each member's net balance decreases by what they owe (in group currency)
                     let current = runningBalances[memberId] ?? 0.0
                     runningBalances[memberId] = current - splitAmount
                 }
 
                 // If splits didn't cover the full amount or splits were empty, distribute remaining
-                let remaining = totalAmount - totalAllocated
+                let remaining = effectiveTotal - totalAllocated
                 if remaining > 0.001 && !members.isEmpty {
                     let share = remaining / Double(members.count)
                     for member in members {
@@ -87,25 +89,23 @@ public enum GroupLedgerService {
 
                 // Payer's net balance increases by total amount paid
                 let currentPayerBalance = runningBalances[payerId] ?? 0.0
-                runningBalances[payerId] = currentPayerBalance + totalAmount
+                runningBalances[payerId] = currentPayerBalance + effectiveTotal
 
             } else if eventType == "settlement" {
                 let payerId = event.payerId
-                let amount = event.amount
 
-                // Payer gave money to settle debt -> their balance increases (+amount)
+                // Payer gave money to settle debt -> their balance increases (+amount in group currency)
                 let currentPayer = runningBalances[payerId] ?? 0.0
-                runningBalances[payerId] = currentPayer + amount
+                runningBalances[payerId] = currentPayer + effectiveTotal
 
-                // Payee received money -> their balance decreases (-amount)
+                // Payee received money -> their balance decreases (-amount in group currency)
                 if let payeeId = event.payeeId {
                     let currentPayee = runningBalances[payeeId] ?? 0.0
-                    runningBalances[payeeId] = currentPayee - amount
+                    runningBalances[payeeId] = currentPayee - effectiveTotal
                 }
             }
 
-            // Snapshot the primary running balance after this event
-            // (Perspective of the first member in the roster, or overall payer)
+            // Snapshot the primary running balance after this event in group currency
             let snapshotBalance: Double
             if let primaryMember = members.first {
                 snapshotBalance = runningBalances[primaryMember.id] ?? 0.0
@@ -119,6 +119,10 @@ public enum GroupLedgerService {
                 eventType: event.eventType,
                 title: event.title,
                 amount: event.amount,
+                currency: event.currency ?? groupCurrency,
+                convertedAmount: event.convertedAmount ?? effectiveTotal,
+                targetCurrency: event.targetCurrency ?? groupCurrency,
+                exchangeRate: event.exchangeRate ?? 1.0,
                 payerId: event.payerId,
                 payerName: event.payerName,
                 payeeId: event.payeeId,
@@ -140,7 +144,8 @@ public enum GroupLedgerService {
                 participantId: member.id,
                 name: member.name,
                 netBalance: balance,
-                formattedBalance: formatMonochromeBalance(balance)
+                formattedBalance: formatMonochromeBalance(balance, currency: groupCurrency),
+                currency: groupCurrency
             ))
         }
 
@@ -149,14 +154,14 @@ public enum GroupLedgerService {
         if let primaryMember = members.first {
             primaryBalance = runningBalances[primaryMember.id] ?? 0.0
         } else {
-            // Aggregate net positive balance or zero
             primaryBalance = memberDTOs.first?.netBalance ?? 0.0
         }
 
-        // Continuous debt simplification across all expenses using the pure-Swift graph algorithm
+        // Continuous debt simplification in group base currency
         let simplified = MinimumCashFlowCalculator.simplifyGroupBalances(
             members: members,
-            netBalances: runningBalances
+            netBalances: runningBalances,
+            currency: groupCurrency
         )
 
         return (

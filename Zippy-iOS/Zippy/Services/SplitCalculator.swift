@@ -4,9 +4,10 @@ import Foundation
 
 /// Pure arithmetic engine that computes per-person balances across all flexible split methods.
 /// Called synchronously on the main thread for instant UI updates.
+/// Supports multi-currency calculations storing both original and converted amounts.
 enum SplitCalculator {
 
-    /// Computes per-person balances based on the active split method.
+    /// Computes per-person balances based on the active split method with multi-currency support.
     static func calculate(
         method: SplitMethod = .itemized,
         items: [ReceiptItem],
@@ -18,10 +19,13 @@ enum SplitCalculator {
         subtotal: Double,
         tax: Double,
         tip: Double,
-        total: Double
+        total: Double,
+        currency: String = "USD",
+        targetCurrency: String = "USD",
+        exchangeRate: Double = 1.0
     ) -> SplitResult {
         guard !participants.isEmpty else {
-            return SplitResult(balances: [], assignedSubtotal: 0)
+            return SplitResult(balances: [], assignedSubtotal: 0, currency: currency)
         }
 
         let effectiveSubtotal = subtotal > 0 ? subtotal : items.reduce(0.0) { $0 + $1.price }
@@ -34,7 +38,10 @@ enum SplitCalculator {
                 subtotal: effectiveSubtotal,
                 tax: tax,
                 tip: tip,
-                total: effectiveTotal
+                total: effectiveTotal,
+                currency: currency,
+                targetCurrency: targetCurrency,
+                exchangeRate: exchangeRate
             )
 
         case .itemized:
@@ -43,7 +50,10 @@ enum SplitCalculator {
                 participants: participants,
                 assignments: assignments,
                 tax: tax,
-                tip: tip
+                tip: tip,
+                currency: currency,
+                targetCurrency: targetCurrency,
+                exchangeRate: exchangeRate
             )
 
         case .percentage:
@@ -53,7 +63,10 @@ enum SplitCalculator {
                 subtotal: effectiveSubtotal,
                 tax: tax,
                 tip: tip,
-                total: effectiveTotal
+                total: effectiveTotal,
+                currency: currency,
+                targetCurrency: targetCurrency,
+                exchangeRate: exchangeRate
             )
 
         case .shares:
@@ -63,7 +76,10 @@ enum SplitCalculator {
                 subtotal: effectiveSubtotal,
                 tax: tax,
                 tip: tip,
-                total: effectiveTotal
+                total: effectiveTotal,
+                currency: currency,
+                targetCurrency: targetCurrency,
+                exchangeRate: exchangeRate
             )
 
         case .exact:
@@ -73,7 +89,10 @@ enum SplitCalculator {
                 subtotal: effectiveSubtotal,
                 tax: tax,
                 tip: tip,
-                total: effectiveTotal
+                total: effectiveTotal,
+                currency: currency,
+                targetCurrency: targetCurrency,
+                exchangeRate: exchangeRate
             )
         }
     }
@@ -92,7 +111,10 @@ enum SplitCalculator {
             participants: participants,
             assignments: assignments,
             tax: tax,
-            tip: tip
+            tip: tip,
+            currency: "USD",
+            targetCurrency: "USD",
+            exchangeRate: 1.0
         )
     }
 
@@ -103,30 +125,39 @@ enum SplitCalculator {
         subtotal: Double,
         tax: Double,
         tip: Double,
-        total: Double
+        total: Double,
+        currency: String,
+        targetCurrency: String,
+        exchangeRate: Double
     ) -> SplitResult {
         let count = Double(participants.count)
-        guard count > 0 else { return SplitResult(balances: [], assignedSubtotal: 0) }
+        guard count > 0 else {
+            return SplitResult(balances: [], assignedSubtotal: 0, currency: currency)
+        }
 
-        let perPersonSubtotal = round2(subtotal / count)
-        let perPersonTax = round2(tax / count)
-        let perPersonTip = round2(tip / count)
-        let perPersonTotal = round2(perPersonSubtotal + perPersonTax + perPersonTip)
+        let perPersonSubtotal = (subtotal / count * 100).rounded() / 100
+        let perPersonTax = (tax / count * 100).rounded() / 100
+        let perPersonTip = (tip / count * 100).rounded() / 100
+        let perPersonTotal = (perPersonSubtotal + perPersonTax + perPersonTip * 100).rounded() / 100
 
-        var balances: [PersonBalance] = participants.map { p in
+        var balances = participants.map { p in
             PersonBalance(
                 participantId: p.id,
                 name: p.name,
                 itemsSubtotal: perPersonSubtotal,
                 taxShare: perPersonTax,
                 tipShare: perPersonTip,
-                total: perPersonTotal
+                total: perPersonTotal,
+                currency: currency,
+                targetCurrency: targetCurrency,
+                exchangeRate: exchangeRate
             )
         }
 
-        let expectedTotal = round2(subtotal + tax + tip)
-        let actualTotal = balances.reduce(0.0) { $0 + $1.total }
-        let remainder = round2(expectedTotal - actualTotal)
+        // Remainder adjustment
+        let expectedTotal = ((subtotal + tax + tip) * 100).rounded() / 100
+        let actualTotal = ((balances.reduce(0.0) { $0 + $1.total }) * 100).rounded() / 100
+        let remainder = ((expectedTotal - actualTotal) * 100).rounded() / 100
         if remainder != 0, !balances.isEmpty {
             let maxIdx = balances.indices.max(by: { balances[$0].total < balances[$1].total }) ?? 0
             let b = balances[maxIdx]
@@ -136,11 +167,18 @@ enum SplitCalculator {
                 itemsSubtotal: b.itemsSubtotal,
                 taxShare: b.taxShare,
                 tipShare: b.tipShare,
-                total: round2(b.total + remainder)
+                total: ((b.total + remainder) * 100).rounded() / 100,
+                currency: currency,
+                targetCurrency: targetCurrency,
+                exchangeRate: exchangeRate,
+                isPaid: b.isPaid,
+                paidAt: b.paidAt,
+                paymentMethod: b.paymentMethod,
+                settlementStatus: b.settlementStatus
             )
         }
 
-        return SplitResult(balances: balances, assignedSubtotal: round2(subtotal))
+        return SplitResult(balances: balances, assignedSubtotal: subtotal, currency: currency)
     }
 
     // MARK: - 2. Itemized Split
@@ -150,10 +188,13 @@ enum SplitCalculator {
         participants: [Participant],
         assignments: [Int: Set<UUID>],
         tax: Double,
-        tip: Double
+        tip: Double,
+        currency: String,
+        targetCurrency: String,
+        exchangeRate: Double
     ) -> SplitResult {
         guard !participants.isEmpty else {
-            return SplitResult(balances: [], assignedSubtotal: 0)
+            return SplitResult(balances: [], assignedSubtotal: 0, currency: currency)
         }
 
         var personSubtotals: [UUID: Double] = [:]
@@ -161,13 +202,20 @@ enum SplitCalculator {
             personSubtotals[participant.id] = 0
         }
 
+        var assignedIndices: Set<Int> = []
+
         for (index, item) in items.enumerated() {
             guard let assignees = assignments[index], !assignees.isEmpty else { continue }
+            assignedIndices.insert(index)
             let share = item.price / Double(assignees.count)
             for participantId in assignees where personSubtotals[participantId] != nil {
                 personSubtotals[participantId, default: 0] += share
             }
         }
+
+        let assignedSubtotal = items.enumerated()
+            .filter { assignedIndices.contains($0.offset) }
+            .reduce(0.0) { $0 + $1.element.price }
 
         let groupSubtotal = personSubtotals.values.reduce(0, +)
 
@@ -175,35 +223,59 @@ enum SplitCalculator {
             let subtotal = personSubtotals[participant.id] ?? 0
             guard groupSubtotal > 0 else {
                 return PersonBalance(
-                    participantId: participant.id, name: participant.name,
-                    itemsSubtotal: 0, taxShare: 0, tipShare: 0, total: 0
+                    participantId: participant.id,
+                    name: participant.name,
+                    itemsSubtotal: 0,
+                    taxShare: 0,
+                    tipShare: 0,
+                    total: 0,
+                    currency: currency,
+                    targetCurrency: targetCurrency,
+                    exchangeRate: exchangeRate
                 )
             }
             let ratio = subtotal / groupSubtotal
-            let taxShare = round2(ratio * tax)
-            let tipShare = round2(ratio * tip)
-            let personTotal = round2(subtotal + taxShare + tipShare)
+            let taxShare = (ratio * tax * 100).rounded() / 100
+            let tipShare = (ratio * tip * 100).rounded() / 100
+            let personTotal = ((subtotal + taxShare + tipShare) * 100).rounded() / 100
             return PersonBalance(
-                participantId: participant.id, name: participant.name,
-                itemsSubtotal: round2(subtotal), taxShare: taxShare,
-                tipShare: tipShare, total: personTotal
+                participantId: participant.id,
+                name: participant.name,
+                itemsSubtotal: (subtotal * 100).rounded() / 100,
+                taxShare: taxShare,
+                tipShare: tipShare,
+                total: personTotal,
+                currency: currency,
+                targetCurrency: targetCurrency,
+                exchangeRate: exchangeRate
             )
         }
 
-        let expectedTotal = round2(groupSubtotal + tax + tip)
-        let actualTotal = balances.reduce(0.0) { $0 + $1.total }
-        let remainder = round2(expectedTotal - actualTotal)
+        let expectedTotal = ((groupSubtotal + tax + tip) * 100).rounded() / 100
+        let actualTotal = ((balances.reduce(0.0) { $0 + $1.total }) * 100).rounded() / 100
+        let remainder = ((expectedTotal - actualTotal) * 100).rounded() / 100
+
         if remainder != 0,
            let maxIndex = balances.indices.max(by: { balances[$0].total < balances[$1].total }) {
             let b = balances[maxIndex]
             balances[maxIndex] = PersonBalance(
-                participantId: b.participantId, name: b.name,
-                itemsSubtotal: b.itemsSubtotal, taxShare: b.taxShare,
-                tipShare: b.tipShare, total: round2(b.total + remainder)
+                participantId: b.participantId,
+                name: b.name,
+                itemsSubtotal: b.itemsSubtotal,
+                taxShare: b.taxShare,
+                tipShare: b.tipShare,
+                total: ((b.total + remainder) * 100).rounded() / 100,
+                currency: currency,
+                targetCurrency: targetCurrency,
+                exchangeRate: exchangeRate,
+                isPaid: b.isPaid,
+                paidAt: b.paidAt,
+                paymentMethod: b.paymentMethod,
+                settlementStatus: b.settlementStatus
             )
         }
 
-        return SplitResult(balances: balances, assignedSubtotal: round2(groupSubtotal))
+        return SplitResult(balances: balances, assignedSubtotal: assignedSubtotal, currency: currency)
     }
 
     // MARK: - 3. Percentage Split
@@ -214,10 +286,15 @@ enum SplitCalculator {
         subtotal: Double,
         tax: Double,
         tip: Double,
-        total: Double
+        total: Double,
+        currency: String,
+        targetCurrency: String,
+        exchangeRate: Double
     ) -> SplitResult {
         let count = Double(participants.count)
-        guard count > 0 else { return SplitResult(balances: [], assignedSubtotal: 0) }
+        guard count > 0 else {
+            return SplitResult(balances: [], assignedSubtotal: 0, currency: currency)
+        }
 
         var userPercentages: [UUID: Double] = [:]
         var totalSpecifiedPct: Double = 0
@@ -238,34 +315,48 @@ enum SplitCalculator {
         var balances: [PersonBalance] = participants.map { p in
             let pct = userPercentages[p.id] ?? (100.0 / count)
             let ratio = totalSpecifiedPct > 0 ? (pct / totalSpecifiedPct) : (1.0 / count)
-            let pSubtotal = round2(ratio * subtotal)
-            let pTax = round2(ratio * tax)
-            let pTip = round2(ratio * tip)
-            let pTotal = round2(pSubtotal + pTax + pTip)
+            let pSubtotal = (ratio * subtotal * 100).rounded() / 100
+            let pTax = (ratio * tax * 100).rounded() / 100
+            let pTip = (ratio * tip * 100).rounded() / 100
+            let pTotal = ((pSubtotal + pTax + pTip) * 100).rounded() / 100
             return PersonBalance(
                 participantId: p.id,
                 name: p.name,
                 itemsSubtotal: pSubtotal,
                 taxShare: pTax,
                 tipShare: pTip,
-                total: pTotal
+                total: pTotal,
+                currency: currency,
+                targetCurrency: targetCurrency,
+                exchangeRate: exchangeRate
             )
         }
 
-        let expectedTotal = round2(subtotal + tax + tip)
-        let actualTotal = balances.reduce(0.0) { $0 + $1.total }
-        let remainder = round2(expectedTotal - actualTotal)
+        let expectedTotal = ((subtotal + tax + tip) * 100).rounded() / 100
+        let actualTotal = ((balances.reduce(0.0) { $0 + $1.total }) * 100).rounded() / 100
+        let remainder = ((expectedTotal - actualTotal) * 100).rounded() / 100
+
         if remainder != 0,
            let maxIndex = balances.indices.max(by: { balances[$0].total < balances[$1].total }) {
             let b = balances[maxIndex]
             balances[maxIndex] = PersonBalance(
-                participantId: b.participantId, name: b.name,
-                itemsSubtotal: b.itemsSubtotal, taxShare: b.taxShare,
-                tipShare: b.tipShare, total: round2(b.total + remainder)
+                participantId: b.participantId,
+                name: b.name,
+                itemsSubtotal: b.itemsSubtotal,
+                taxShare: b.taxShare,
+                tipShare: b.tipShare,
+                total: ((b.total + remainder) * 100).rounded() / 100,
+                currency: currency,
+                targetCurrency: targetCurrency,
+                exchangeRate: exchangeRate,
+                isPaid: b.isPaid,
+                paidAt: b.paidAt,
+                paymentMethod: b.paymentMethod,
+                settlementStatus: b.settlementStatus
             )
         }
 
-        return SplitResult(balances: balances, assignedSubtotal: round2(subtotal))
+        return SplitResult(balances: balances, assignedSubtotal: subtotal, currency: currency)
     }
 
     // MARK: - 4. Shares Split
@@ -276,10 +367,15 @@ enum SplitCalculator {
         subtotal: Double,
         tax: Double,
         tip: Double,
-        total: Double
+        total: Double,
+        currency: String,
+        targetCurrency: String,
+        exchangeRate: Double
     ) -> SplitResult {
         let count = Double(participants.count)
-        guard count > 0 else { return SplitResult(balances: [], assignedSubtotal: 0) }
+        guard count > 0 else {
+            return SplitResult(balances: [], assignedSubtotal: 0, currency: currency)
+        }
 
         var userShares: [UUID: Double] = [:]
         var totalShares: Double = 0
@@ -299,34 +395,48 @@ enum SplitCalculator {
         var balances: [PersonBalance] = participants.map { p in
             let share = userShares[p.id] ?? 1.0
             let ratio = share / totalShares
-            let pSubtotal = round2(ratio * subtotal)
-            let pTax = round2(ratio * tax)
-            let pTip = round2(ratio * tip)
-            let pTotal = round2(pSubtotal + pTax + pTip)
+            let pSubtotal = (ratio * subtotal * 100).rounded() / 100
+            let pTax = (ratio * tax * 100).rounded() / 100
+            let pTip = (ratio * tip * 100).rounded() / 100
+            let pTotal = ((pSubtotal + pTax + pTip) * 100).rounded() / 100
             return PersonBalance(
                 participantId: p.id,
                 name: p.name,
                 itemsSubtotal: pSubtotal,
                 taxShare: pTax,
                 tipShare: pTip,
-                total: pTotal
+                total: pTotal,
+                currency: currency,
+                targetCurrency: targetCurrency,
+                exchangeRate: exchangeRate
             )
         }
 
-        let expectedTotal = round2(subtotal + tax + tip)
-        let actualTotal = balances.reduce(0.0) { $0 + $1.total }
-        let remainder = round2(expectedTotal - actualTotal)
+        let expectedTotal = ((subtotal + tax + tip) * 100).rounded() / 100
+        let actualTotal = ((balances.reduce(0.0) { $0 + $1.total }) * 100).rounded() / 100
+        let remainder = ((expectedTotal - actualTotal) * 100).rounded() / 100
+
         if remainder != 0,
            let maxIndex = balances.indices.max(by: { balances[$0].total < balances[$1].total }) {
             let b = balances[maxIndex]
             balances[maxIndex] = PersonBalance(
-                participantId: b.participantId, name: b.name,
-                itemsSubtotal: b.itemsSubtotal, taxShare: b.taxShare,
-                tipShare: b.tipShare, total: round2(b.total + remainder)
+                participantId: b.participantId,
+                name: b.name,
+                itemsSubtotal: b.itemsSubtotal,
+                taxShare: b.taxShare,
+                tipShare: b.tipShare,
+                total: ((b.total + remainder) * 100).rounded() / 100,
+                currency: currency,
+                targetCurrency: targetCurrency,
+                exchangeRate: exchangeRate,
+                isPaid: b.isPaid,
+                paidAt: b.paidAt,
+                paymentMethod: b.paymentMethod,
+                settlementStatus: b.settlementStatus
             )
         }
 
-        return SplitResult(balances: balances, assignedSubtotal: round2(subtotal))
+        return SplitResult(balances: balances, assignedSubtotal: subtotal, currency: currency)
     }
 
     // MARK: - 5. Exact Split
@@ -337,99 +447,37 @@ enum SplitCalculator {
         subtotal: Double,
         tax: Double,
         tip: Double,
-        total: Double
+        total: Double,
+        currency: String,
+        targetCurrency: String,
+        exchangeRate: Double
     ) -> SplitResult {
         let count = Double(participants.count)
-        guard count > 0 else { return SplitResult(balances: [], assignedSubtotal: 0) }
+        guard count > 0 else {
+            return SplitResult(balances: [], assignedSubtotal: 0, currency: currency)
+        }
 
-        let defaultPerPerson = count > 0 ? round2(total / count) : 0.0
+        let defaultPerPerson = count > 0 ? ((total / count * 100).rounded() / 100) : 0.0
 
-        let balances: [PersonBalance] = participants.map { p in
+        let balances = participants.map { p in
             let pTotal = exactAmounts[p.id] ?? defaultPerPerson
             let ratio = total > 0 ? (pTotal / total) : (1.0 / count)
-            let pSubtotal = round2(pTotal * (total > 0 ? (subtotal / total) : 1.0))
-            let pTax = round2(pTotal * (total > 0 ? (tax / total) : 0.0))
-            let pTip = round2(pTotal - pSubtotal - pTax)
+            let pSubtotal = ((pTotal * (total > 0 ? (subtotal / total) : 1.0)) * 100).rounded() / 100
+            let pTax = ((pTotal * (total > 0 ? (tax / total) : 0.0)) * 100).rounded() / 100
+            let pTip = ((pTotal - pSubtotal - pTax) * 100).rounded() / 100
             return PersonBalance(
                 participantId: p.id,
                 name: p.name,
                 itemsSubtotal: pSubtotal,
                 taxShare: pTax,
                 tipShare: pTip,
-                total: round2(pTotal)
+                total: (pTotal * 100).rounded() / 100,
+                currency: currency,
+                targetCurrency: targetCurrency,
+                exchangeRate: exchangeRate
             )
         }
 
-        return SplitResult(balances: balances, assignedSubtotal: round2(subtotal))
-    }
-
-    /// Optimizes balances into the fewest direct transfers using the minimum-cash-flow algorithm.
-    static func simplify(balances: [PersonBalance], hostId: UUID? = nil) -> [SimplifiedPayment] {
-        guard !balances.isEmpty else { return [] }
-
-        struct NetParticipant {
-            let id: UUID
-            let name: String
-            var netCents: Int64
-        }
-
-        let host = hostId ?? balances.first?.participantId ?? UUID()
-        let totalBillCents = Int64((balances.reduce(0.0) { $0 + $1.total } * 100).rounded())
-
-        var netMap: [UUID: Int64] = [:]
-        for b in balances {
-            let owedCents = Int64((b.total * 100).rounded())
-            netMap[b.participantId, default: 0] -= owedCents
-        }
-        netMap[host, default: 0] += totalBillCents
-
-        var participants = balances.map { b in
-            NetParticipant(id: b.participantId, name: b.name, netCents: netMap[b.participantId] ?? 0)
-        }
-
-        var transfers: [SimplifiedPayment] = []
-
-        while true {
-            guard let maxCreditorIdx = participants.indices.max(by: { participants[$0].netCents < participants[$1].netCents }),
-                  participants[maxCreditorIdx].netCents > 0 else {
-                break
-            }
-
-            guard let maxDebtorIdx = participants.indices.min(by: { participants[$0].netCents < participants[$1].netCents }),
-                  participants[maxDebtorIdx].netCents < 0 else {
-                break
-            }
-
-            let credit = participants[maxCreditorIdx].netCents
-            let debt = -participants[maxDebtorIdx].netCents
-            let settle = min(credit, debt)
-            guard settle > 0 else { break }
-
-            let debtor = participants[maxDebtorIdx]
-            let creditor = participants[maxCreditorIdx]
-            let amount = Double(settle) / 100.0
-            let formattedAmount = String(format: "$%.2f", amount)
-            let line = "\(debtor.name) pays \(creditor.name) \(formattedAmount)"
-
-            transfers.append(SimplifiedPayment(
-                fromId: debtor.id,
-                fromName: debtor.name,
-                toId: creditor.id,
-                toName: creditor.name,
-                amount: amount,
-                formattedText: line
-            ))
-
-            participants[maxDebtorIdx].netCents += settle
-            participants[maxCreditorIdx].netCents -= settle
-        }
-
-        return transfers
-    }
-
-    // MARK: - Private
-
-    private static func round2(_ value: Double) -> Double {
-        (value * 100).rounded() / 100
+        return SplitResult(balances: balances, assignedSubtotal: subtotal, currency: currency)
     }
 }

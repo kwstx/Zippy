@@ -36,9 +36,21 @@ final class SplitSession: Model, Content, @unchecked Sendable {
     @OptionalField(key: "exact_allocations")
     var exactAllocations: [String: Double]?
 
-    /// Server-computed authoritative balances.
+    /// Server-computed authoritative balances (storing both original and converted amounts).
     @Field(key: "balances")
     var balances: [PersonBalanceDTO]
+
+    /// Original currency code (e.g. "USD", "EUR", "GBP").
+    @OptionalField(key: "currency")
+    var currency: String?
+
+    /// Target / converted base currency code (default: "USD").
+    @OptionalField(key: "target_currency")
+    var targetCurrency: String?
+
+    /// Live exchange rate at calculation time.
+    @OptionalField(key: "exchange_rate")
+    var exchangeRate: Double?
 
     /// Cryptographically random token for the shareable short link.
     @OptionalField(key: "share_token")
@@ -66,6 +78,9 @@ final class SplitSession: Model, Content, @unchecked Sendable {
         shareAllocations: [String: Double]? = nil,
         exactAllocations: [String: Double]? = nil,
         balances: [PersonBalanceDTO],
+        currency: String? = "USD",
+        targetCurrency: String? = "USD",
+        exchangeRate: Double? = 1.0,
         shareToken: String? = nil,
         category: String? = nil
     ) {
@@ -78,6 +93,9 @@ final class SplitSession: Model, Content, @unchecked Sendable {
         self.shareAllocations = shareAllocations
         self.exactAllocations = exactAllocations
         self.balances = balances
+        self.currency = currency ?? "USD"
+        self.targetCurrency = targetCurrency ?? "USD"
+        self.exchangeRate = exchangeRate ?? 1.0
         self.shareToken = shareToken
         self.category = category
     }

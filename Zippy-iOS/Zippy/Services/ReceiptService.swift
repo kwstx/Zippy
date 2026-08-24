@@ -14,6 +14,10 @@ struct SplitSessionResponse: Decodable {
     let exactAllocations: [String: Double]?
     let balances: [SplitBalanceDTO]
     let receiptTotal: Double
+    let currency: String?
+    let targetCurrency: String?
+    let exchangeRate: Double?
+    let convertedReceiptTotal: Double?
     let category: String?
     let shareableURL: String?
     let createdAt: String?
@@ -35,6 +39,13 @@ struct SplitSessionResponse: Decodable {
         let taxShare: Double
         let tipShare: Double
         let total: Double
+        let currency: String?
+        let convertedItemsSubtotal: Double?
+        let convertedTaxShare: Double?
+        let convertedTipShare: Double?
+        let convertedTotal: Double?
+        let targetCurrency: String?
+        let exchangeRate: Double?
         let isPaid: Bool?
         let paidAt: Date?
         let paymentMethod: String?
@@ -97,7 +108,8 @@ struct ExpenseDTO: Codable {
 extension SplitSessionResponse {
     /// Converts server balance DTOs to the app's PersonBalance model.
     var appBalances: [PersonBalance] {
-        balances.map {
+        let sessionCur = self.currency ?? "USD"
+        return balances.map {
             let status = $0.settlementStatus ?? ($0.isPaid == true ? .settled : ($0.paymentMethod != nil ? .pendingConfirmation : .unpaid))
             return PersonBalance(
                 participantId: $0.participantId,
@@ -106,6 +118,13 @@ extension SplitSessionResponse {
                 taxShare: $0.taxShare,
                 tipShare: $0.tipShare,
                 total: $0.total,
+                currency: $0.currency ?? sessionCur,
+                convertedItemsSubtotal: $0.convertedItemsSubtotal,
+                convertedTaxShare: $0.convertedTaxShare,
+                convertedTipShare: $0.convertedTipShare,
+                convertedTotal: $0.convertedTotal,
+                targetCurrency: $0.targetCurrency ?? self.targetCurrency,
+                exchangeRate: $0.exchangeRate ?? self.exchangeRate,
                 isPaid: $0.isPaid ?? (status == .settled),
                 paidAt: $0.paidAt,
                 paymentMethod: $0.paymentMethod,
@@ -266,7 +285,9 @@ enum ReceiptService {
         percentageAllocations: [String: Double]? = nil,
         shareAllocations: [String: Double]? = nil,
         exactAllocations: [String: Double]? = nil,
-        category: String? = nil
+        category: String? = nil,
+        currency: String? = nil,
+        targetCurrency: String? = nil
     ) async throws -> SplitSessionResponse {
         guard let url = URL(string: "http://localhost:8080/api/splits") else {
             throw URLError(.badURL)
@@ -285,6 +306,8 @@ enum ReceiptService {
             let shareAllocations: [String: Double]?
             let exactAllocations: [String: Double]?
             let category: String?
+            let currency: String?
+            let targetCurrency: String?
 
             struct ParticipantPayload: Encodable {
                 let id: UUID
@@ -300,7 +323,9 @@ enum ReceiptService {
             percentageAllocations: percentageAllocations,
             shareAllocations: shareAllocations,
             exactAllocations: exactAllocations,
-            category: category
+            category: category,
+            currency: currency,
+            targetCurrency: targetCurrency
         )
 
         request.httpBody = try JSONEncoder().encode(payload)
@@ -329,7 +354,9 @@ enum ReceiptService {
         assignments: [String: [UUID]]? = nil,
         percentageAllocations: [String: Double]? = nil,
         shareAllocations: [String: Double]? = nil,
-        exactAllocations: [String: Double]? = nil
+        exactAllocations: [String: Double]? = nil,
+        currency: String? = nil,
+        targetCurrency: String? = nil
     ) async throws -> SplitSessionResponse {
         let endpoint: String
         if let token = token, !token.isEmpty {
@@ -355,6 +382,8 @@ enum ReceiptService {
             let percentageAllocations: [String: Double]?
             let shareAllocations: [String: Double]?
             let exactAllocations: [String: Double]?
+            let currency: String?
+            let targetCurrency: String?
 
             struct ParticipantPayload: Encodable {
                 let id: UUID
@@ -368,7 +397,9 @@ enum ReceiptService {
             assignments: assignments,
             percentageAllocations: percentageAllocations,
             shareAllocations: shareAllocations,
-            exactAllocations: exactAllocations
+            exactAllocations: exactAllocations,
+            currency: currency,
+            targetCurrency: targetCurrency
         )
 
         request.httpBody = try JSONEncoder().encode(payload)
@@ -623,6 +654,10 @@ struct HistoryItem: Codable, Identifiable {
     let title: String
     let category: String?
     let total: Double
+    var currency: String = "USD"
+    var convertedTotal: Double? = nil
+    var targetCurrency: String? = nil
+    var exchangeRate: Double? = nil
     let createdAt: Date?
     let participantCount: Int
     let isSettled: Bool
@@ -631,6 +666,28 @@ struct HistoryItem: Codable, Identifiable {
 
     var parsedCategory: ReceiptCategory? {
         ReceiptCategory(flexibleString: category)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, receiptId, title, category, total, currency, convertedTotal, targetCurrency, exchangeRate, createdAt, participantCount, isSettled, shareableURL, itemsSummary
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        receiptId = try container.decodeIfPresent(UUID.self, forKey: .receiptId)
+        title = try container.decode(String.self, forKey: .title)
+        category = try container.decodeIfPresent(String.self, forKey: .category)
+        total = try container.decode(Double.self, forKey: .total)
+        currency = try container.decodeIfPresent(String.self, forKey: .currency) ?? "USD"
+        convertedTotal = try container.decodeIfPresent(Double.self, forKey: .convertedTotal)
+        targetCurrency = try container.decodeIfPresent(String.self, forKey: .targetCurrency)
+        exchangeRate = try container.decodeIfPresent(Double.self, forKey: .exchangeRate)
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt)
+        participantCount = try container.decode(Int.self, forKey: .participantCount)
+        isSettled = try container.decode(Bool.self, forKey: .isSettled)
+        shareableURL = try container.decodeIfPresent(String.self, forKey: .shareableURL)
+        itemsSummary = try container.decodeIfPresent([String].self, forKey: .itemsSummary)
     }
 }
 

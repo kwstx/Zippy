@@ -11,6 +11,7 @@ struct EditableReceiptFormView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showingSplitView: Bool = false
     @State private var isLinkCopied: Bool = false
+    @State private var showingCurrencyPicker: Bool = false
 
     /// Initialize with existing AI-extracted receipt for easy correction.
     init(receipt: ExtractedReceiptResponse) {
@@ -43,6 +44,10 @@ struct EditableReceiptFormView: View {
                 )
                 .padding(.vertical, 14)
 
+                blackDivider()
+
+                // MARK: - Currency Selector Bar (Monochrome)
+                currencySelectorBar()
                 blackDivider()
 
                 // MARK: - Reference & Merchant Identifier
@@ -81,6 +86,91 @@ struct EditableReceiptFormView: View {
         .toolbarColorScheme(.light, for: .navigationBar)
         .navigationDestination(isPresented: $showingSplitView) {
             SplitView(receipt: viewModel.asExtractedReceiptResponse)
+        }
+        .sheet(isPresented: $showingCurrencyPicker) {
+            currencySelectionSheet()
+        }
+    }
+
+    // MARK: - Currency Selector Bar
+
+    @ViewBuilder
+    private func currencySelectorBar() -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("RECEIPT CURRENCY")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundColor(Color(white: 0.4))
+                    .tracking(0.5)
+
+                HStack(spacing: 6) {
+                    Text(viewModel.currency)
+                        .font(.system(size: 15, weight: .bold, design: .monospaced))
+                        .foregroundColor(.black)
+
+                    Text(CurrencyRateService.symbol(for: viewModel.currency))
+                        .font(.system(size: 13, weight: .light, design: .monospaced))
+                        .foregroundColor(Color(white: 0.5))
+                }
+            }
+
+            Spacer()
+
+            Button(action: { showingCurrencyPicker = true }) {
+                HStack(spacing: 4) {
+                    Text("CHANGE")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, design: .monospaced))
+                }
+                .foregroundColor(.black)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
+            }
+        }
+        .padding(.vertical, 12)
+    }
+
+    @ViewBuilder
+    private func currencySelectionSheet() -> some View {
+        NavigationStack {
+            List {
+                ForEach(CurrencyRateService.supportedCurrencies, id: \.self) { code in
+                    Button(action: {
+                        viewModel.setCurrency(code)
+                        showingCurrencyPicker = false
+                    }) {
+                        HStack {
+                            Text(code)
+                                .font(.system(size: 14, weight: .bold, design: .monospaced))
+                                .foregroundColor(.black)
+
+                            Text(CurrencyRateService.symbol(for: code))
+                                .font(.system(size: 14, weight: .light, design: .monospaced))
+                                .foregroundColor(Color(white: 0.5))
+
+                            Spacer()
+
+                            if viewModel.currency == code {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(.black)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+            .listStyle(.plain)
+            .navigationTitle("Select Currency")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { showingCurrencyPicker = false }
+                        .foregroundColor(.black)
+                }
+            }
         }
     }
 
@@ -196,10 +286,10 @@ struct EditableReceiptFormView: View {
                     .foregroundColor(Color(white: 0.4))
                     .frame(width: 44, alignment: .center)
 
-                Text("PRICE")
+                Text("PRICE (\(viewModel.currency))")
                     .font(.system(size: 9, weight: .bold, design: .monospaced))
                     .foregroundColor(Color(white: 0.4))
-                    .frame(width: 72, alignment: .trailing)
+                    .frame(width: 80, alignment: .trailing)
 
                 Text("SHARED")
                     .font(.system(size: 9, weight: .bold, design: .monospaced))
@@ -273,7 +363,6 @@ struct EditableReceiptFormView: View {
             UnderlinedTextField(
                 placeholder: "0.00",
                 text: item.priceString,
-                prefix: "$",
                 keyboardType: .decimalPad,
                 alignment: .trailing,
                 underlineColor: .black,
@@ -283,7 +372,7 @@ struct EditableReceiptFormView: View {
                     viewModel.scheduleDebouncedPatch()
                 }
             )
-            .frame(width: 72)
+            .frame(width: 80)
 
             // Shared Checkbox Toggle
             Button(action: {
@@ -326,11 +415,19 @@ struct EditableReceiptFormView: View {
     @ViewBuilder
     private func totalsSection() -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("FINANCIAL TOTALS")
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                .foregroundColor(.black)
-                .tracking(0.5)
-                .padding(.top, 14)
+            HStack {
+                Text("FINANCIAL TOTALS")
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundColor(.black)
+                    .tracking(0.5)
+
+                Spacer()
+
+                Text("CURRENCY: \(viewModel.currency)")
+                    .font(.system(size: 10, weight: .light, design: .monospaced))
+                    .foregroundColor(Color(white: 0.4))
+            }
+            .padding(.top, 14)
 
             // Subtotal Underlined Field
             HStack {
@@ -341,7 +438,6 @@ struct EditableReceiptFormView: View {
                 UnderlinedTextField(
                     placeholder: "0.00",
                     text: $viewModel.subtotalString,
-                    prefix: "$",
                     keyboardType: .decimalPad,
                     alignment: .trailing,
                     underlineColor: .black,
@@ -362,7 +458,6 @@ struct EditableReceiptFormView: View {
                 UnderlinedTextField(
                     placeholder: "0.00",
                     text: $viewModel.taxString,
-                    prefix: "$",
                     keyboardType: .decimalPad,
                     alignment: .trailing,
                     underlineColor: .black,
@@ -383,7 +478,6 @@ struct EditableReceiptFormView: View {
                 UnderlinedTextField(
                     placeholder: "0.00",
                     text: $viewModel.tipString,
-                    prefix: "$",
                     keyboardType: .decimalPad,
                     alignment: .trailing,
                     underlineColor: .black,
@@ -406,7 +500,6 @@ struct EditableReceiptFormView: View {
                 UnderlinedTextField(
                     placeholder: "0.00",
                     text: $viewModel.totalString,
-                    prefix: "$",
                     keyboardType: .decimalPad,
                     alignment: .trailing,
                     isBold: true,
@@ -438,10 +531,10 @@ struct EditableReceiptFormView: View {
 
             if !report.isMathConsistent {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("• Computed items sum: $\(String(format: "%.2f", report.computedSubtotal))")
+                    Text("• Computed items sum: \(CurrencyText.plainText(report.computedSubtotal, currency: viewModel.currency))")
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundColor(Color(white: 0.3))
-                    Text("• Computed grand total: $\(String(format: "%.2f", report.computedTotal))")
+                    Text("• Computed grand total: \(CurrencyText.plainText(report.computedTotal, currency: viewModel.currency))")
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundColor(Color(white: 0.3))
 

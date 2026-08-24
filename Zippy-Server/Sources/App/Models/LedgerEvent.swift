@@ -21,9 +21,25 @@ final class LedgerEvent: Model, Content, @unchecked Sendable {
     @Field(key: "title")
     var title: String
 
-    /// Total amount of the transaction.
+    /// Total amount of the transaction in original currency.
     @Field(key: "amount")
     var amount: Double
+
+    /// Original currency code (e.g., "USD", "EUR", "GBP").
+    @OptionalField(key: "currency")
+    var currency: String?
+
+    /// Target / base currency of the parent group (default: "USD").
+    @OptionalField(key: "target_currency")
+    var targetCurrency: String?
+
+    /// Live exchange rate at calculation time.
+    @OptionalField(key: "exchange_rate")
+    var exchangeRate: Double?
+
+    /// Converted amount in targetCurrency at calculation time.
+    @OptionalField(key: "converted_amount")
+    var convertedAmount: Double?
 
     /// The participant UUID who paid for this expense or made the settlement transfer.
     @Field(key: "payer_id")
@@ -65,6 +81,10 @@ final class LedgerEvent: Model, Content, @unchecked Sendable {
         eventType: String,
         title: String,
         amount: Double,
+        currency: String? = "USD",
+        targetCurrency: String? = "USD",
+        exchangeRate: Double? = 1.0,
+        convertedAmount: Double? = nil,
         payerId: UUID,
         payerName: String,
         payeeId: UUID? = nil,
@@ -79,6 +99,11 @@ final class LedgerEvent: Model, Content, @unchecked Sendable {
         self.eventType = eventType
         self.title = title
         self.amount = amount
+        self.currency = currency ?? "USD"
+        self.targetCurrency = targetCurrency ?? "USD"
+        self.exchangeRate = exchangeRate ?? 1.0
+        let rate = exchangeRate ?? 1.0
+        self.convertedAmount = convertedAmount ?? ((amount * rate * 100).rounded() / 100)
         self.payerId = payerId
         self.payerName = payerName
         self.payeeId = payeeId

@@ -45,6 +45,8 @@ struct CreateSplitRequest: Content {
     let shareAllocations: [String: Double]?
     let exactAllocations: [String: Double]?
     let category: String?
+    let currency: String?
+    let targetCurrency: String?
 }
 
 /// Request body for updating the active split method and its allocations.
@@ -55,6 +57,8 @@ struct UpdateSplitMethodRequest: Content {
     let percentageAllocations: [String: Double]?
     let shareAllocations: [String: Double]?
     let exactAllocations: [String: Double]?
+    let currency: String?
+    let targetCurrency: String?
 }
 
 /// Request body for patching an extracted receipt with manual corrections or edits.
@@ -66,6 +70,8 @@ struct PatchReceiptRequest: Content {
     let total: Double?
     let category: String?
     let referenceId: String?
+    let currency: String?
+    let targetCurrency: String?
 }
 
 /// Request body for manually entering a brand new receipt.
@@ -77,6 +83,8 @@ struct CreateManualReceiptRequest: Content {
     let tip: Double?
     let total: Double?
     let category: String?
+    let currency: String?
+    let targetCurrency: String?
 }
 
 /// Response returned after patching a receipt, including validation report and updated split session.
@@ -100,6 +108,7 @@ struct HistoryFilterQuery: Content {
     let search: String?
     let limit: Int?
     let offset: Int?
+    let currency: String?
 }
 
 /// A historical entry returned by history & search filters.
@@ -109,11 +118,47 @@ struct HistoryItemDTO: Content {
     let title: String
     let category: String?
     let total: Double
+    let currency: String
+    let convertedTotal: Double?
+    let targetCurrency: String?
+    let exchangeRate: Double?
     let createdAt: Date?
     let participantCount: Int
     let isSettled: Bool
     let shareableURL: String?
     let itemsSummary: [String]?
+
+    init(
+        id: UUID,
+        receiptId: UUID?,
+        title: String,
+        category: String?,
+        total: Double,
+        currency: String = "USD",
+        convertedTotal: Double? = nil,
+        targetCurrency: String? = nil,
+        exchangeRate: Double? = nil,
+        createdAt: Date?,
+        participantCount: Int,
+        isSettled: Bool,
+        shareableURL: String?,
+        itemsSummary: [String]?
+    ) {
+        self.id = id
+        self.receiptId = receiptId
+        self.title = title
+        self.category = category
+        self.total = total
+        self.currency = currency
+        self.convertedTotal = convertedTotal ?? total
+        self.targetCurrency = targetCurrency ?? currency
+        self.exchangeRate = exchangeRate ?? 1.0
+        self.createdAt = createdAt
+        self.participantCount = participantCount
+        self.isSettled = isSettled
+        self.shareableURL = shareableURL
+        self.itemsSummary = itemsSummary
+    }
 }
 
 /// A participant in a bill split.
@@ -129,7 +174,7 @@ enum SettlementStatus: String, Codable, Content {
     case settled = "settled"
 }
 
-/// Server-computed per-person balance breakdown with payment tracking.
+/// Server-computed per-person balance breakdown with payment tracking and multi-currency support.
 struct PersonBalanceDTO: Codable {
     let participantId: UUID
     let name: String
@@ -137,13 +182,22 @@ struct PersonBalanceDTO: Codable {
     let taxShare: Double
     let tipShare: Double
     let total: Double
+    let currency: String
+    let convertedItemsSubtotal: Double?
+    let convertedTaxShare: Double?
+    let convertedTipShare: Double?
+    let convertedTotal: Double?
+    let targetCurrency: String?
+    let exchangeRate: Double?
     var isPaid: Bool
     var paidAt: Date?
     var paymentMethod: String?
     var settlementStatus: SettlementStatus
 
     enum CodingKeys: String, CodingKey {
-        case participantId, name, itemsSubtotal, taxShare, tipShare, total, isPaid, paidAt, paymentMethod, settlementStatus
+        case participantId, name, itemsSubtotal, taxShare, tipShare, total, currency
+        case convertedItemsSubtotal, convertedTaxShare, convertedTipShare, convertedTotal
+        case targetCurrency, exchangeRate, isPaid, paidAt, paymentMethod, settlementStatus
     }
 
     init(
@@ -153,6 +207,13 @@ struct PersonBalanceDTO: Codable {
         taxShare: Double,
         tipShare: Double,
         total: Double,
+        currency: String = "USD",
+        convertedItemsSubtotal: Double? = nil,
+        convertedTaxShare: Double? = nil,
+        convertedTipShare: Double? = nil,
+        convertedTotal: Double? = nil,
+        targetCurrency: String? = "USD",
+        exchangeRate: Double? = 1.0,
         isPaid: Bool = false,
         paidAt: Date? = nil,
         paymentMethod: String? = nil,
@@ -164,6 +225,14 @@ struct PersonBalanceDTO: Codable {
         self.taxShare = taxShare
         self.tipShare = tipShare
         self.total = total
+        self.currency = currency
+        let rate = exchangeRate ?? 1.0
+        self.convertedItemsSubtotal = convertedItemsSubtotal ?? ((itemsSubtotal * rate * 100).rounded() / 100)
+        self.convertedTaxShare = convertedTaxShare ?? ((taxShare * rate * 100).rounded() / 100)
+        self.convertedTipShare = convertedTipShare ?? ((tipShare * rate * 100).rounded() / 100)
+        self.convertedTotal = convertedTotal ?? ((total * rate * 100).rounded() / 100)
+        self.targetCurrency = targetCurrency ?? "USD"
+        self.exchangeRate = rate
         self.isPaid = isPaid
         self.paidAt = paidAt
         self.paymentMethod = paymentMethod
@@ -178,6 +247,16 @@ struct PersonBalanceDTO: Codable {
         taxShare = try container.decode(Double.self, forKey: .taxShare)
         tipShare = try container.decode(Double.self, forKey: .tipShare)
         total = try container.decode(Double.self, forKey: .total)
+        currency = try container.decodeIfPresent(String.self, forKey: .currency) ?? "USD"
+        
+        let rate = try container.decodeIfPresent(Double.self, forKey: .exchangeRate) ?? 1.0
+        exchangeRate = rate
+        targetCurrency = try container.decodeIfPresent(String.self, forKey: .targetCurrency) ?? "USD"
+        convertedItemsSubtotal = try container.decodeIfPresent(Double.self, forKey: .convertedItemsSubtotal) ?? ((itemsSubtotal * rate * 100).rounded() / 100)
+        convertedTaxShare = try container.decodeIfPresent(Double.self, forKey: .convertedTaxShare) ?? ((taxShare * rate * 100).rounded() / 100)
+        convertedTipShare = try container.decodeIfPresent(Double.self, forKey: .convertedTipShare) ?? ((tipShare * rate * 100).rounded() / 100)
+        convertedTotal = try container.decodeIfPresent(Double.self, forKey: .convertedTotal) ?? ((total * rate * 100).rounded() / 100)
+
         let paid = try container.decodeIfPresent(Bool.self, forKey: .isPaid) ?? false
         isPaid = paid
         paidAt = try container.decodeIfPresent(Date.self, forKey: .paidAt)
@@ -208,6 +287,10 @@ struct SplitSessionResponse: Content {
     let exactAllocations: [String: Double]?
     let balances: [PersonBalanceDTO]
     let receiptTotal: Double
+    let currency: String
+    let targetCurrency: String?
+    let exchangeRate: Double?
+    let convertedReceiptTotal: Double?
     let category: String?
     let shareableURL: String?
     let createdAt: Date?
@@ -223,6 +306,10 @@ struct SplitSessionResponse: Content {
         exactAllocations: [String: Double]? = nil,
         balances: [PersonBalanceDTO],
         receiptTotal: Double,
+        currency: String = "USD",
+        targetCurrency: String? = "USD",
+        exchangeRate: Double? = 1.0,
+        convertedReceiptTotal: Double? = nil,
         category: String? = nil,
         shareableURL: String? = nil,
         createdAt: Date? = nil
@@ -237,6 +324,11 @@ struct SplitSessionResponse: Content {
         self.exactAllocations = exactAllocations
         self.balances = balances
         self.receiptTotal = receiptTotal
+        self.currency = currency
+        self.targetCurrency = targetCurrency ?? "USD"
+        self.exchangeRate = exchangeRate ?? 1.0
+        let rate = exchangeRate ?? 1.0
+        self.convertedReceiptTotal = convertedReceiptTotal ?? ((receiptTotal * rate * 100).rounded() / 100)
         self.category = category
         self.shareableURL = shareableURL
         self.createdAt = createdAt
@@ -265,7 +357,7 @@ struct SelectPaymentMethodResponse: Content {
 /// Request body for unauthenticated guest payments.
 struct GuestPaymentRequest: Content {
     let participantId: UUID
-    let paymentMethod: String // "Venmo", "PayPal", "Cash App", "Bank transfer", "apple_pay", "card"
+    let paymentMethod: String
     let transactionReference: String?
 }
 
@@ -283,7 +375,28 @@ struct GuestPaymentResponse: Content {
     let settlementStatus: SettlementStatus
     let paidAt: Date
     let totalPaid: Double
+    let currency: String?
     let message: String
+
+    init(
+        success: Bool,
+        participantId: UUID,
+        isPaid: Bool,
+        settlementStatus: SettlementStatus,
+        paidAt: Date,
+        totalPaid: Double,
+        currency: String? = "USD",
+        message: String
+    ) {
+        self.success = success
+        self.participantId = participantId
+        self.isPaid = isPaid
+        self.settlementStatus = settlementStatus
+        self.paidAt = paidAt
+        self.totalPaid = totalPaid
+        self.currency = currency ?? "USD"
+        self.message = message
+    }
 }
 
 /// Webhook payload received from external payment providers.
@@ -293,6 +406,7 @@ struct PaymentWebhookPayload: Content {
     let shareToken: String?
     let participantId: UUID?
     let amount: Double?
+    let currency: String?
     let paymentMethod: String?
     let status: String?
     let transactionReference: String?
@@ -303,6 +417,7 @@ struct SplitStatusResponse: Content {
     let sessionId: UUID
     let total: Double
     let totalCollected: Double
+    let currency: String
     let isFullySettled: Bool
     let participants: [ParticipantStatusDTO]
 
@@ -310,6 +425,8 @@ struct SplitStatusResponse: Content {
         let id: UUID
         let name: String
         let total: Double
+        let currency: String
+        let convertedTotal: Double?
         let isPaid: Bool
         let settlementStatus: SettlementStatus
         let paidAt: Date?
@@ -321,10 +438,19 @@ struct SplitStatusResponse: Content {
 public struct ExpenseSplitDTO: Codable, Content {
     public let participantId: UUID
     public let amount: Double?
+    public let currency: String?
+    public let convertedAmount: Double?
 
-    public init(participantId: UUID, amount: Double? = nil) {
+    public init(
+        participantId: UUID,
+        amount: Double? = nil,
+        currency: String? = "USD",
+        convertedAmount: Double? = nil
+    ) {
         self.participantId = participantId
         self.amount = amount
+        self.currency = currency ?? "USD"
+        self.convertedAmount = convertedAmount ?? amount
     }
 }
 
@@ -333,6 +459,10 @@ public struct ExpenseDTO: Codable, Content {
     public let id: UUID?
     public let title: String?
     public let amount: Double
+    public let currency: String?
+    public let convertedAmount: Double?
+    public let targetCurrency: String?
+    public let exchangeRate: Double?
     public let paidBy: UUID
     /// Participant IDs sharing this expense equally.
     public let splitWith: [UUID]?
@@ -343,6 +473,10 @@ public struct ExpenseDTO: Codable, Content {
         id: UUID? = nil,
         title: String? = nil,
         amount: Double,
+        currency: String? = "USD",
+        convertedAmount: Double? = nil,
+        targetCurrency: String? = "USD",
+        exchangeRate: Double? = 1.0,
         paidBy: UUID,
         splitWith: [UUID]? = nil,
         splits: [ExpenseSplitDTO]? = nil
@@ -350,6 +484,10 @@ public struct ExpenseDTO: Codable, Content {
         self.id = id
         self.title = title
         self.amount = amount
+        self.currency = currency ?? "USD"
+        self.convertedAmount = convertedAmount ?? amount
+        self.targetCurrency = targetCurrency ?? "USD"
+        self.exchangeRate = exchangeRate ?? 1.0
         self.paidBy = paidBy
         self.splitWith = splitWith
         self.splits = splits
@@ -363,6 +501,10 @@ public struct SimplifiedPaymentDTO: Codable, Content {
     public let toId: UUID
     public let toName: String
     public let amount: Double
+    public let currency: String
+    public let originalAmount: Double?
+    public let originalCurrency: String?
+    public let exchangeRate: Double?
     public let formattedText: String
 
     public init(
@@ -371,6 +513,10 @@ public struct SimplifiedPaymentDTO: Codable, Content {
         toId: UUID,
         toName: String,
         amount: Double,
+        currency: String = "USD",
+        originalAmount: Double? = nil,
+        originalCurrency: String? = nil,
+        exchangeRate: Double? = 1.0,
         formattedText: String
     ) {
         self.fromId = fromId
@@ -378,6 +524,10 @@ public struct SimplifiedPaymentDTO: Codable, Content {
         self.toId = toId
         self.toName = toName
         self.amount = amount
+        self.currency = currency
+        self.originalAmount = originalAmount ?? amount
+        self.originalCurrency = originalCurrency ?? currency
+        self.exchangeRate = exchangeRate ?? 1.0
         self.formattedText = formattedText
     }
 }
@@ -386,10 +536,16 @@ public struct SimplifiedPaymentDTO: Codable, Content {
 public struct SimplifyExpensesRequest: Content {
     public let participants: [ParticipantDTO]
     public let expenses: [ExpenseDTO]
+    public let baseCurrency: String?
 
-    public init(participants: [ParticipantDTO], expenses: [ExpenseDTO]) {
+    public init(
+        participants: [ParticipantDTO],
+        expenses: [ExpenseDTO],
+        baseCurrency: String? = "USD"
+    ) {
         self.participants = participants
         self.expenses = expenses
+        self.baseCurrency = baseCurrency ?? "USD"
     }
 }
 
@@ -398,6 +554,7 @@ public struct SimplifyExpensesResponse: Content {
     public let transfers: [SimplifiedPaymentDTO]
     public let lines: [String]
     public let totalTransferred: Double
+    public let currency: String
     public let originalExpenseCount: Int
     public let transferCount: Int
 
@@ -405,14 +562,15 @@ public struct SimplifyExpensesResponse: Content {
         transfers: [SimplifiedPaymentDTO],
         lines: [String],
         totalTransferred: Double,
+        currency: String = "USD",
         originalExpenseCount: Int,
         transferCount: Int
     ) {
         self.transfers = transfers
         self.lines = lines
         self.totalTransferred = totalTransferred
+        self.currency = currency
         self.originalExpenseCount = originalExpenseCount
         self.transferCount = transferCount
     }
 }
-

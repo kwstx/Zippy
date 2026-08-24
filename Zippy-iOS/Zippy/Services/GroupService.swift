@@ -36,8 +36,8 @@ enum GroupService {
         return try jsonDecoder.decode([PersistentGroup].self, from: data)
     }
 
-    /// Creates a new persistent group with an initial roster of participants.
-    static func createGroup(name: String, members: [Participant]) async throws -> PersistentGroup {
+    /// Creates a new persistent group with an initial roster of participants and base currency.
+    static func createGroup(name: String, members: [Participant], currency: String = "USD") async throws -> PersistentGroup {
         guard let url = URL(string: baseURL) else {
             throw URLError(.badURL)
         }
@@ -48,7 +48,8 @@ enum GroupService {
 
         let payload = CreateGroupPayload(
             name: name,
-            members: members.map { .init(id: $0.id, name: $0.name) }
+            members: members.map { .init(id: $0.id, name: $0.name) },
+            currency: currency
         )
         request.httpBody = try jsonEncoder.encode(payload)
 
@@ -80,11 +81,13 @@ enum GroupService {
         return try jsonDecoder.decode(GroupLedgerHistoryResponse.self, from: data)
     }
 
-    /// Appends an expense transaction event into the group's backend ledger.
+    /// Appends an expense transaction event into the group's backend ledger with currency conversion.
     static func addExpense(
         groupId: UUID,
         title: String,
         amount: Double,
+        currency: String = "USD",
+        targetCurrency: String = "USD",
         payerId: UUID,
         splitMemberIds: [UUID]? = nil,
         splits: [AddGroupExpensePayload.LedgerSplitPayload]? = nil,
@@ -102,6 +105,8 @@ enum GroupService {
         let payload = AddGroupExpensePayload(
             title: title,
             amount: amount,
+            currency: currency,
+            targetCurrency: targetCurrency,
             payerId: payerId,
             splitMemberIds: splitMemberIds,
             splits: splits,
@@ -119,12 +124,14 @@ enum GroupService {
         return try jsonDecoder.decode(LedgerEvent.self, from: data)
     }
 
-    /// Appends a settlement transaction event into the group's backend ledger.
+    /// Appends a settlement transaction event into the group's backend ledger with currency conversion.
     static func addSettlement(
         groupId: UUID,
         payerId: UUID,
         payeeId: UUID,
         amount: Double,
+        currency: String = "USD",
+        targetCurrency: String = "USD",
         note: String? = nil
     ) async throws -> LedgerEvent {
         guard let url = URL(string: "\(baseURL)/\(groupId.uuidString)/settlements") else {
@@ -139,6 +146,8 @@ enum GroupService {
             payerId: payerId,
             payeeId: payeeId,
             amount: amount,
+            currency: currency,
+            targetCurrency: targetCurrency,
             note: note
         )
         request.httpBody = try jsonEncoder.encode(payload)

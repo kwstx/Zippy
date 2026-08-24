@@ -76,7 +76,7 @@ struct GroupListView: View {
                 if let error = viewModel.errorMessage {
                     Text(error)
                         .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(.red)
+                        .foregroundColor(Color(white: 0.7))
                         .padding(.vertical, 8)
                         .padding(.horizontal, 16)
                 }
@@ -107,9 +107,9 @@ struct GroupListView: View {
                 }
             }
             .sheet(isPresented: $showingCreateGroupSheet) {
-                CreateGroupSheet { name, members in
+                CreateGroupSheet { name, members, currency in
                     Task {
-                        _ = await viewModel.createGroup(name: name, members: members)
+                        _ = await viewModel.createGroup(name: name, members: members, currency: currency)
                     }
                 }
             }
@@ -125,17 +125,28 @@ struct GroupListView: View {
     private func groupRow(_ group: PersistentGroup) -> some View {
         HStack(alignment: .center) {
             // Group Title
-            Text(group.name)
-                .font(.system(size: 16, weight: .semibold, design: .monospaced))
-                .foregroundColor(.black)
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(group.name)
+                    .font(.system(size: 16, weight: .semibold, design: .monospaced))
+                    .foregroundColor(.black)
+                    .lineLimit(1)
+
+                Text("BASE: \(group.currency ?? "USD")")
+                    .font(.system(size: 9, weight: .light, design: .monospaced))
+                    .foregroundColor(Color(white: 0.5))
+            }
 
             Spacer()
 
             // Single Monochrome Balance Figure
-            Text(group.formattedBalance)
-                .font(.system(size: 16, weight: .bold, design: .monospaced))
-                .foregroundColor(.black)
+            CurrencyText(
+                group.runningBalance ?? 0.0,
+                currency: group.currency ?? "USD",
+                font: .system(size: 16, weight: .bold, design: .monospaced),
+                amountWeight: .bold,
+                codeWeight: .light
+            )
+            .foregroundColor(.black)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 18)
@@ -146,14 +157,16 @@ struct GroupListView: View {
 
 // MARK: - Create Group Sheet
 struct CreateGroupSheet: View {
-    let onSave: (String, [Participant]) -> Void
+    let onSave: (String, [Participant], String) -> Void
     @Environment(\.dismiss) private var dismiss
 
     @State private var groupName: String = ""
     @State private var memberName: String = ""
+    @State private var currency: String = "USD"
     @State private var members: [Participant] = [
         Participant(name: "Me")
     ]
+    @State private var showingCurrencyPicker = false
 
     var body: some View {
         NavigationStack {
@@ -174,6 +187,38 @@ struct CreateGroupSheet: View {
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 20)
+
+                // Currency Row
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("BASE CURRENCY")
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .foregroundColor(Color(white: 0.3))
+
+                        HStack(spacing: 6) {
+                            Text(currency)
+                                .font(.system(size: 14, weight: .bold, design: .monospaced))
+                                .foregroundColor(.black)
+
+                            Text(CurrencyRateService.symbol(for: currency))
+                                .font(.system(size: 13, weight: .light, design: .monospaced))
+                                .foregroundColor(Color(white: 0.5))
+                        }
+                    }
+
+                    Spacer()
+
+                    Button(action: { showingCurrencyPicker = true }) {
+                        Text("CHANGE")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundColor(.black)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
 
                 // Member Roster
                 VStack(alignment: .leading, spacing: 8) {
@@ -229,10 +274,10 @@ struct CreateGroupSheet: View {
                             }
                         }
                     }
-                    .frame(maxHeight: 220)
+                    .frame(maxHeight: 200)
                 }
                 .padding(.horizontal, 20)
-                .padding(.top, 20)
+                .padding(.top, 16)
 
                 Spacer()
 
@@ -259,6 +304,51 @@ struct CreateGroupSheet: View {
                         .foregroundColor(.black)
                 }
             }
+            .sheet(isPresented: $showingCurrencyPicker) {
+                currencyPickerSheet()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func currencyPickerSheet() -> some View {
+        NavigationStack {
+            List {
+                ForEach(CurrencyRateService.supportedCurrencies, id: \.self) { code in
+                    Button(action: {
+                        self.currency = code
+                        showingCurrencyPicker = false
+                    }) {
+                        HStack {
+                            Text(code)
+                                .font(.system(size: 14, weight: .bold, design: .monospaced))
+                                .foregroundColor(.black)
+
+                            Text(CurrencyRateService.symbol(for: code))
+                                .font(.system(size: 14, weight: .light, design: .monospaced))
+                                .foregroundColor(Color(white: 0.5))
+
+                            Spacer()
+
+                            if currency == code {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(.black)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+            .listStyle(.plain)
+            .navigationTitle("Select Base Currency")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { showingCurrencyPicker = false }
+                        .foregroundColor(.black)
+                }
+            }
         }
     }
 
@@ -272,7 +362,7 @@ struct CreateGroupSheet: View {
     private func save() {
         let trimmedName = groupName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else { return }
-        onSave(trimmedName, members)
+        onSave(trimmedName, members, currency)
         dismiss()
     }
 }

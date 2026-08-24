@@ -9,6 +9,10 @@ struct ItemAssignmentSheet: View {
     @ObservedObject var viewModel: SplitViewModel
     @Environment(\.dismiss) private var dismiss
 
+    var currency: String {
+        item.originalCurrency ?? viewModel.receipt.effectiveCurrency
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // Header
@@ -17,9 +21,14 @@ struct ItemAssignmentSheet: View {
                     Text(item.name)
                         .font(.system(.headline, design: .monospaced))
                         .foregroundColor(.white)
-                    Text(formatPrice(item.price))
-                        .font(.system(.subheadline, design: .monospaced))
-                        .foregroundColor(Color(white: 0.5))
+                    CurrencyText(
+                        item.price,
+                        currency: currency,
+                        font: .system(.subheadline, design: .monospaced),
+                        amountWeight: .regular,
+                        codeWeight: .light
+                    )
+                    .foregroundColor(Color(white: 0.5))
                 }
                 Spacer()
                 Button(action: { dismiss() }) {
@@ -99,10 +108,15 @@ struct ItemAssignmentSheet: View {
                             let assigneeCount = viewModel.assignees(for: itemIndex).count
                             if viewModel.isAssigned(itemIndex: itemIndex, participantId: participant.id),
                                assigneeCount > 0 {
-                                Text(formatPrice(item.price / Double(assigneeCount)))
-                                    .font(.system(.caption, design: .monospaced))
-                                    .foregroundColor(Color(white: 0.5))
-                                    .padding(.leading, 8)
+                                CurrencyText(
+                                    item.price / Double(assigneeCount),
+                                    currency: currency,
+                                    font: .system(.caption, design: .monospaced),
+                                    amountWeight: .regular,
+                                    codeWeight: .light
+                                )
+                                .foregroundColor(Color(white: 0.5))
+                                .padding(.leading, 8)
                             }
                         }
                         .padding(.horizontal, 20)
@@ -126,9 +140,5 @@ struct ItemAssignmentSheet: View {
         Rectangle()
             .fill(Color(white: 0.2))
             .frame(height: 0.5)
-    }
-
-    private func formatPrice(_ value: Double) -> String {
-        String(format: "$%.2f", value)
     }
 }

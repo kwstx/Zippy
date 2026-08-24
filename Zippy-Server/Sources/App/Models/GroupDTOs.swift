@@ -6,11 +6,21 @@ public struct LedgerSplitDTO: Codable, Content {
     public let memberId: UUID
     public let memberName: String
     public let amount: Double
+    public let currency: String
+    public let convertedAmount: Double?
 
-    public init(memberId: UUID, memberName: String, amount: Double) {
+    public init(
+        memberId: UUID,
+        memberName: String,
+        amount: Double,
+        currency: String = "USD",
+        convertedAmount: Double? = nil
+    ) {
         self.memberId = memberId
         self.memberName = memberName
         self.amount = amount
+        self.currency = currency
+        self.convertedAmount = convertedAmount ?? amount
     }
 }
 
@@ -18,10 +28,16 @@ public struct LedgerSplitDTO: Codable, Content {
 public struct CreateGroupRequest: Content {
     public let name: String
     public let members: [ParticipantDTO]
+    public let currency: String?
 
-    public init(name: String, members: [ParticipantDTO]) {
+    public init(
+        name: String,
+        members: [ParticipantDTO],
+        currency: String? = "USD"
+    ) {
         self.name = name
         self.members = members
+        self.currency = currency ?? "USD"
     }
 }
 
@@ -29,6 +45,8 @@ public struct CreateGroupRequest: Content {
 public struct AddGroupExpenseRequest: Content {
     public let title: String
     public let amount: Double
+    public let currency: String?
+    public let targetCurrency: String?
     public let payerId: UUID
     /// Optional subset of member IDs splitting this expense equally.
     public let splitMemberIds: [UUID]?
@@ -40,6 +58,8 @@ public struct AddGroupExpenseRequest: Content {
     public init(
         title: String,
         amount: Double,
+        currency: String? = "USD",
+        targetCurrency: String? = "USD",
         payerId: UUID,
         splitMemberIds: [UUID]? = nil,
         splits: [LedgerSplitDTO]? = nil,
@@ -48,6 +68,8 @@ public struct AddGroupExpenseRequest: Content {
     ) {
         self.title = title
         self.amount = amount
+        self.currency = currency ?? "USD"
+        self.targetCurrency = targetCurrency ?? "USD"
         self.payerId = payerId
         self.splitMemberIds = splitMemberIds
         self.splits = splits
@@ -61,17 +83,23 @@ public struct AddGroupSettlementRequest: Content {
     public let payerId: UUID
     public let payeeId: UUID
     public let amount: Double
+    public let currency: String?
+    public let targetCurrency: String?
     public let note: String?
 
     public init(
         payerId: UUID,
         payeeId: UUID,
         amount: Double,
+        currency: String? = "USD",
+        targetCurrency: String? = "USD",
         note: String? = nil
     ) {
         self.payerId = payerId
         self.payeeId = payeeId
         self.amount = amount
+        self.currency = currency ?? "USD"
+        self.targetCurrency = targetCurrency ?? "USD"
         self.note = note
     }
 }
@@ -83,6 +111,7 @@ public struct GroupResponseDTO: Content {
     public let members: [ParticipantDTO]
     public let runningBalance: Double
     public let formattedBalance: String
+    public let currency: String
     public let memberCount: Int
     public let eventCount: Int
     public let lastActivity: Date?
@@ -94,6 +123,7 @@ public struct GroupResponseDTO: Content {
         members: [ParticipantDTO],
         runningBalance: Double,
         formattedBalance: String,
+        currency: String = "USD",
         memberCount: Int,
         eventCount: Int,
         lastActivity: Date? = nil,
@@ -104,6 +134,7 @@ public struct GroupResponseDTO: Content {
         self.members = members
         self.runningBalance = runningBalance
         self.formattedBalance = formattedBalance
+        self.currency = currency
         self.memberCount = memberCount
         self.eventCount = eventCount
         self.lastActivity = lastActivity
@@ -117,17 +148,20 @@ public struct GroupMemberBalanceDTO: Content {
     public let name: String
     public let netBalance: Double
     public let formattedBalance: String
+    public let currency: String
 
     public init(
         participantId: UUID,
         name: String,
         netBalance: Double,
-        formattedBalance: String
+        formattedBalance: String,
+        currency: String = "USD"
     ) {
         self.participantId = participantId
         self.name = name
         self.netBalance = netBalance
         self.formattedBalance = formattedBalance
+        self.currency = currency
     }
 }
 
@@ -138,6 +172,10 @@ public struct LedgerEventResponseDTO: Content {
     public let eventType: String
     public let title: String
     public let amount: Double
+    public let currency: String
+    public let convertedAmount: Double?
+    public let targetCurrency: String?
+    public let exchangeRate: Double?
     public let payerId: UUID
     public let payerName: String
     public let payeeId: UUID?
@@ -154,6 +192,10 @@ public struct LedgerEventResponseDTO: Content {
         eventType: String,
         title: String,
         amount: Double,
+        currency: String = "USD",
+        convertedAmount: Double? = nil,
+        targetCurrency: String? = "USD",
+        exchangeRate: Double? = 1.0,
         payerId: UUID,
         payerName: String,
         payeeId: UUID? = nil,
@@ -169,6 +211,10 @@ public struct LedgerEventResponseDTO: Content {
         self.eventType = eventType
         self.title = title
         self.amount = amount
+        self.currency = currency
+        self.convertedAmount = convertedAmount ?? amount
+        self.targetCurrency = targetCurrency ?? "USD"
+        self.exchangeRate = exchangeRate ?? 1.0
         self.payerId = payerId
         self.payerName = payerName
         self.payeeId = payeeId
@@ -188,6 +234,7 @@ public struct GroupLedgerHistoryResponseDTO: Content {
     public let events: [LedgerEventResponseDTO]
     public let memberBalances: [GroupMemberBalanceDTO]
     public let currentBalances: [String: Double]
+    public let currency: String
     public let simplifiedTransfers: [SimplifiedPaymentDTO]
     public let simplifiedLines: [String]
     public let totalTransferred: Double
@@ -197,6 +244,7 @@ public struct GroupLedgerHistoryResponseDTO: Content {
         events: [LedgerEventResponseDTO],
         memberBalances: [GroupMemberBalanceDTO],
         currentBalances: [String: Double],
+        currency: String = "USD",
         simplifiedTransfers: [SimplifiedPaymentDTO] = [],
         simplifiedLines: [String] = [],
         totalTransferred: Double = 0.0
@@ -205,6 +253,7 @@ public struct GroupLedgerHistoryResponseDTO: Content {
         self.events = events
         self.memberBalances = memberBalances
         self.currentBalances = currentBalances
+        self.currency = currency
         self.simplifiedTransfers = simplifiedTransfers
         self.simplifiedLines = simplifiedLines
         self.totalTransferred = totalTransferred

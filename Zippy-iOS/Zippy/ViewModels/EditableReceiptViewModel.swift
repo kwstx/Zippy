@@ -10,6 +10,10 @@ struct EditableReceiptItem: Identifiable, Equatable {
     var priceString: String = "0.00"
     var quantityString: String = "1"
     var isShared: Bool = false
+    var originalCurrency: String? = "USD"
+    var convertedPrice: Double? = nil
+    var targetCurrency: String? = "USD"
+    var exchangeRate: Double? = 1.0
 
     var price: Double {
         Double(priceString.replacingOccurrences(of: "$", with: "").trimmingCharacters(in: .whitespaces)) ?? 0.0
@@ -25,7 +29,11 @@ struct EditableReceiptItem: Identifiable, Equatable {
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
             price: price,
             quantity: quantity,
-            isShared: isShared
+            isShared: isShared,
+            originalCurrency: originalCurrency,
+            convertedPrice: convertedPrice,
+            targetCurrency: targetCurrency,
+            exchangeRate: exchangeRate
         )
     }
 
@@ -35,7 +43,11 @@ struct EditableReceiptItem: Identifiable, Equatable {
             name: item.name,
             priceString: String(format: "%.2f", item.price),
             quantityString: String(item.quantity),
-            isShared: item.isShared
+            isShared: item.isShared,
+            originalCurrency: item.originalCurrency,
+            convertedPrice: item.convertedPrice,
+            targetCurrency: item.targetCurrency,
+            exchangeRate: item.exchangeRate
         )
     }
 }
@@ -50,6 +62,7 @@ final class EditableReceiptViewModel: ObservableObject {
     @Published var taxString: String = "0.00"
     @Published var tipString: String = "0.00"
     @Published var totalString: String = "0.00"
+    @Published var currency: String = "USD"
     @Published var selectedCategory: ReceiptCategory?
 
     @Published var isSyncing: Bool = false
@@ -96,7 +109,8 @@ final class EditableReceiptViewModel: ObservableObject {
             tax: taxValue,
             tip: tipValue,
             total: totalValue,
-            category: selectedCategory?.rawValue
+            category: selectedCategory?.rawValue,
+            currency: currency
         )
     }
 
@@ -111,6 +125,7 @@ final class EditableReceiptViewModel: ObservableObject {
         self.taxString = String(format: "%.2f", receipt.tax)
         self.tipString = String(format: "%.2f", receipt.tip)
         self.totalString = String(format: "%.2f", receipt.total)
+        self.currency = receipt.currency ?? "USD"
         self.selectedCategory = receipt.parsedCategory
 
         self.isInitializing = false
@@ -128,13 +143,14 @@ final class EditableReceiptViewModel: ObservableObject {
         self.receiptId = nil
         self.referenceId = "manual-\(UUID().uuidString.prefix(8))"
         self.items = [
-            EditableReceiptItem(name: "Coffee", priceString: "4.50", quantityString: "1", isShared: false),
-            EditableReceiptItem(name: "Croissant", priceString: "3.75", quantityString: "1", isShared: false)
+            EditableReceiptItem(name: "Coffee", priceString: "4.50", quantityString: "1", isShared: false, originalCurrency: "USD"),
+            EditableReceiptItem(name: "Croissant", priceString: "3.75", quantityString: "1", isShared: false, originalCurrency: "USD")
         ]
         self.subtotalString = "8.25"
         self.taxString = "0.75"
         self.tipString = "1.50"
         self.totalString = "10.50"
+        self.currency = "USD"
         self.selectedCategory = .everyday
 
         self.isInitializing = false
@@ -151,7 +167,8 @@ final class EditableReceiptViewModel: ObservableObject {
             name: "",
             priceString: "0.00",
             quantityString: "1",
-            isShared: false
+            isShared: false,
+            originalCurrency: currency
         )
         items.append(newItem)
         autoRecalculateTotals(silent: true)
@@ -170,10 +187,21 @@ final class EditableReceiptViewModel: ObservableObject {
             name: item.name + " (Copy)",
             priceString: item.priceString,
             quantityString: item.quantityString,
-            isShared: item.isShared
+            isShared: item.isShared,
+            originalCurrency: item.originalCurrency
         )
         items.append(duplicate)
         autoRecalculateTotals(silent: true)
+        scheduleDebouncedPatch()
+    }
+
+    func setCurrency(_ newCurrency: String) {
+        let cur = newCurrency.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard !cur.isEmpty, cur != self.currency else { return }
+        self.currency = cur
+        for i in items.indices {
+            items[i].originalCurrency = cur
+        }
         scheduleDebouncedPatch()
     }
 
@@ -218,7 +246,9 @@ final class EditableReceiptViewModel: ObservableObject {
             tip: tipValue,
             total: totalValue,
             category: selectedCategory?.rawValue,
-            referenceId: referenceId
+            referenceId: referenceId,
+            currency: currency,
+            targetCurrency: "USD"
         )
 
         do {
@@ -256,8 +286,11 @@ final class EditableReceiptViewModel: ObservableObject {
             tip: tipValue,
             total: totalValue,
             category: selectedCategory?.rawValue,
-            referenceId: referenceId
+            referenceId: referenceId,
+            currency: currency,
+            targetCurrency: "USD"
         )
+
         do {
             let response = try await ReceiptService.patchReceipt(id: id, payload: payload)
             self.validationReport = response.validation
@@ -266,7 +299,7 @@ final class EditableReceiptViewModel: ObservableObject {
             self.lastSyncedAt = Date()
             self.isSyncing = false
         } catch {
-            self.errorMessage = "Validation error: \(error.localizedDescription)"
+            self.errorMessage = "Sync failed: \(error.localizedDescription)"
             self.isSyncing = false
         }
     }
@@ -280,8 +313,11 @@ final class EditableReceiptViewModel: ObservableObject {
             tip: tipValue,
             total: totalValue,
             category: selectedCategory?.rawValue,
-            referenceId: referenceId
+            referenceId: referenceId,
+            currency: currency,
+            targetCurrency: "USD"
         )
+
         do {
             let created = try await ReceiptService.createManualReceipt(payload: payload)
             self.receiptId = created.id
@@ -294,7 +330,7 @@ final class EditableReceiptViewModel: ObservableObject {
             self.lastSyncedAt = Date()
             self.isSyncing = false
         } catch {
-            self.errorMessage = "Creation error: \(error.localizedDescription)"
+            self.errorMessage = "Initial save failed: \(error.localizedDescription)"
             self.isSyncing = false
         }
     }

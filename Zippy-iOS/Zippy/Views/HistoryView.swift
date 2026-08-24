@@ -62,7 +62,7 @@ struct HistoryView: View {
                 .padding(.top, 12)
 
                 divider()
-                    .padding(.top, 6)
+                .padding(.top, 6)
 
                 // MARK: - Results List
                 if isLoading {
@@ -103,7 +103,7 @@ struct HistoryView: View {
                 if let error = errorMessage {
                     Text(error)
                         .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(.red)
+                        .foregroundColor(Color(white: 0.7))
                         .padding(.vertical, 8)
                         .padding(.horizontal, 20)
                 }
@@ -153,9 +153,14 @@ struct HistoryView: View {
                 Spacer()
 
                 VStack(alignment: .trailing, spacing: 4) {
-                    Text(String(format: "$%.2f", item.total))
-                        .font(.system(size: 15, weight: .bold, design: .monospaced))
-                        .foregroundColor(.white)
+                    CurrencyText(
+                        item.total,
+                        currency: item.currency,
+                        font: .system(size: 15, weight: .bold, design: .monospaced),
+                        amountWeight: .bold,
+                        codeWeight: .light
+                    )
+                    .foregroundColor(.white)
 
                     if item.isSettled {
                         Text("SETTLED")

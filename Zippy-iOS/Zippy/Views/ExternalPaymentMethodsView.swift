@@ -8,6 +8,7 @@ struct ExternalPaymentMethodsView: View {
     let participantId: UUID
     let participantName: String
     let amount: Double
+    var currency: String = "USD"
     let token: String?
     let settlementStatus: SettlementStatus
     let selectedMethod: String?
@@ -188,7 +189,7 @@ struct ExternalPaymentMethodsView: View {
                         .foregroundColor(.black)
                         .padding(.top, 8)
 
-                    Text("Transfer $\(String(format: "%.2f", amount)) using the details below. Status will flip to settled upon bank webhook confirmation or manual confirmation.")
+                    Text("Transfer \(CurrencyText.plainText(amount, currency: currency)) using the details below. Status will flip to settled upon bank webhook confirmation or manual confirmation.")
                         .font(.system(size: 13, design: .monospaced))
                         .foregroundColor(Color(white: 0.3))
 
@@ -197,6 +198,7 @@ struct ExternalPaymentMethodsView: View {
                     instructionRow(label: "Routing Number (ACH)", value: "021000021")
                     instructionRow(label: "Account Number", value: "9876543210")
                     instructionRow(label: "Account Name", value: "Zippy Split Host")
+                    instructionRow(label: "Currency", value: currency)
                     instructionRow(label: "Reference Memo", value: "ZIP-\((token ?? "ZIPPY").prefix(6).uppercased())")
 
                     Divider()

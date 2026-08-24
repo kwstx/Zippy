@@ -17,6 +17,10 @@ final class PersistentGroup: Model, Content, @unchecked Sendable {
     @Field(key: "members")
     var members: [ParticipantDTO]
 
+    /// Base currency for group accounting and debt simplification (default: "USD").
+    @OptionalField(key: "currency")
+    var currency: String?
+
     @Timestamp(key: "created_at", on: .create)
     var createdAt: Date?
 
@@ -28,10 +32,12 @@ final class PersistentGroup: Model, Content, @unchecked Sendable {
     init(
         id: UUID? = nil,
         name: String,
-        members: [ParticipantDTO]
+        members: [ParticipantDTO],
+        currency: String? = "USD"
     ) {
         self.id = id
         self.name = name
         self.members = members
+        self.currency = currency ?? "USD"
     }
 }

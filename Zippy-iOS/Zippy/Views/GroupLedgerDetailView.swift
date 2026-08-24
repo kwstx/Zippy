@@ -81,7 +81,7 @@ struct GroupLedgerDetailView: View {
             if let error = viewModel.errorMessage {
                 Text(error)
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(.red)
+                    .foregroundColor(.black)
                     .padding(.vertical, 6)
                     .padding(.horizontal, 20)
             }
@@ -103,11 +103,12 @@ struct GroupLedgerDetailView: View {
         }
         .sheet(isPresented: $showingAddExpenseSheet) {
             if let activeGroup = viewModel.group ?? Optional(initialGroup) {
-                AddLedgerExpenseSheet(group: activeGroup) { title, amount, payerId, splitIds, note in
+                AddLedgerExpenseSheet(group: activeGroup) { title, amount, currency, payerId, splitIds, note in
                     Task {
                         _ = await viewModel.addExpense(
                             title: title,
                             amount: amount,
+                            currency: currency,
                             payerId: payerId,
                             splitMemberIds: splitIds,
                             note: note
@@ -118,12 +119,13 @@ struct GroupLedgerDetailView: View {
         }
         .sheet(isPresented: $showingRecordSettlementSheet) {
             if let activeGroup = viewModel.group ?? Optional(initialGroup) {
-                RecordSettlementSheet(group: activeGroup) { payerId, payeeId, amount, note in
+                RecordSettlementSheet(group: activeGroup) { payerId, payeeId, amount, currency, note in
                     Task {
                         _ = await viewModel.addSettlement(
                             payerId: payerId,
                             payeeId: payeeId,
                             amount: amount,
+                            currency: currency,
                             note: note
                         )
                     }
@@ -132,7 +134,10 @@ struct GroupLedgerDetailView: View {
         }
         .sheet(isPresented: $showingSimplifiedPaymentsSheet) {
             NavigationStack {
-                SimplifiedPaymentsView(lines: viewModel.simplifiedLines)
+                SimplifiedPaymentsView(
+                    lines: viewModel.simplifiedLines,
+                    currency: viewModel.groupCurrency
+                )
             }
         }
         .onAppear {
@@ -151,7 +156,7 @@ struct GroupLedgerDetailView: View {
 
                 let count = viewModel.group?.members.count ?? initialGroup.members.count
                 let eventCount = viewModel.events.count
-                Text("\(count) MEMBERS · \(eventCount) LEDGER EVENTS")
+                Text("\(count) MEMBERS · \(eventCount) EVENTS · BASE: \(viewModel.groupCurrency)")
                     .font(.system(size: 10, weight: .bold, design: .monospaced))
                     .foregroundColor(Color(white: 0.4))
             }
@@ -163,9 +168,15 @@ struct GroupLedgerDetailView: View {
                     .font(.system(size: 9, weight: .bold, design: .monospaced))
                     .foregroundColor(Color(white: 0.4))
 
-                Text(viewModel.group?.formattedBalance ?? initialGroup.formattedBalance)
-                    .font(.system(size: 22, weight: .bold, design: .monospaced))
-                    .foregroundColor(.black)
+                let balance = viewModel.group?.runningBalance ?? initialGroup.runningBalance ?? 0.0
+                CurrencyText(
+                    balance,
+                    currency: viewModel.groupCurrency,
+                    font: .system(size: 22, weight: .bold, design: .monospaced),
+                    amountWeight: .bold,
+                    codeWeight: .light
+                )
+                .foregroundColor(.black)
             }
         }
     }
@@ -221,9 +232,14 @@ struct GroupLedgerDetailView: View {
 
                             Spacer()
 
-                            Text(String(format: "$%.2f", transfer.amount))
-                                .font(.system(size: 14, weight: .bold, design: .monospaced))
-                                .foregroundColor(.black)
+                            CurrencyText(
+                                transfer.amount,
+                                currency: transfer.currency,
+                                font: .system(size: 14, weight: .bold, design: .monospaced),
+                                amountWeight: .bold,
+                                codeWeight: .light
+                            )
+                            .foregroundColor(.black)
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
@@ -253,9 +269,14 @@ struct GroupLedgerDetailView: View {
 
                         Spacer()
 
-                        Text(member.formattedBalance)
-                            .font(.system(size: 13, weight: .bold, design: .monospaced))
-                            .foregroundColor(.black)
+                        CurrencyText(
+                            member.balance,
+                            currency: member.currency,
+                            font: .system(size: 13, weight: .bold, design: .monospaced),
+                            amountWeight: .bold,
+                            codeWeight: .light
+                        )
+                        .foregroundColor(.black)
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
@@ -350,9 +371,32 @@ struct GroupLedgerDetailView: View {
 
                 Spacer()
 
-                Text(String(format: "$%.2f", event.amount))
-                    .font(.system(size: 16, weight: .bold, design: .monospaced))
+                VStack(alignment: .trailing, spacing: 2) {
+                    CurrencyText(
+                        event.amount,
+                        currency: event.effectiveCurrency,
+                        font: .system(size: 16, weight: .bold, design: .monospaced),
+                        amountWeight: .bold,
+                        codeWeight: .light
+                    )
                     .foregroundColor(.black)
+
+                    if let converted = event.convertedAmount, event.effectiveCurrency != event.effectiveTargetCurrency {
+                        HStack(spacing: 2) {
+                            Text("≈")
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(Color(white: 0.4))
+                            CurrencyText(
+                                converted,
+                                currency: event.effectiveTargetCurrency,
+                                font: .system(size: 10, weight: .medium, design: .monospaced),
+                                amountWeight: .medium,
+                                codeWeight: .light
+                            )
+                            .foregroundColor(Color(white: 0.4))
+                        }
+                    }
+                }
             }
 
             // Title and Details
@@ -396,10 +440,19 @@ struct GroupLedgerDetailView: View {
             if let running = event.runningBalanceAfter {
                 HStack {
                     Spacer()
-                    let formatted = formatBalance(running)
-                    Text("Running balance after: \(formatted)")
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    HStack(spacing: 4) {
+                        Text("Running balance after:")
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundColor(Color(white: 0.4))
+                        CurrencyText(
+                            running,
+                            currency: event.effectiveTargetCurrency,
+                            font: .system(size: 10, weight: .medium, design: .monospaced),
+                            amountWeight: .medium,
+                            codeWeight: .light
+                        )
                         .foregroundColor(Color(white: 0.4))
+                    }
                 }
             }
         }
@@ -445,17 +498,6 @@ struct GroupLedgerDetailView: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
             .background(Color.white)
-        }
-    }
-
-    private func formatBalance(_ value: Double) -> String {
-        let rounded = (value * 100).rounded() / 100
-        if abs(rounded) < 0.005 {
-            return "$0.00"
-        } else if rounded > 0 {
-            return String(format: "+$%.2f", rounded)
-        } else {
-            return String(format: "-$%.2f", abs(rounded))
         }
     }
 }

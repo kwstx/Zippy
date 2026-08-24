@@ -4,21 +4,24 @@ import SwiftUI
 
 struct AddLedgerExpenseSheet: View {
     let group: PersistentGroup
-    let onAdd: (String, Double, UUID, [UUID]?, String?) -> Void
+    let onAdd: (String, Double, String, UUID, [UUID]?, String?) -> Void
     @Environment(\.dismiss) private var dismiss
 
     @State private var title: String = ""
     @State private var amountText: String = ""
+    @State private var currency: String
     @State private var selectedPayerId: UUID
     @State private var selectedSplitMemberIds: Set<UUID>
     @State private var note: String = ""
+    @State private var showingCurrencyPicker = false
 
-    init(group: PersistentGroup, onAdd: @escaping (String, Double, UUID, [UUID]?, String?) -> Void) {
+    init(group: PersistentGroup, onAdd: @escaping (String, Double, String, UUID, [UUID]?, String?) -> Void) {
         self.group = group
         self.onAdd = onAdd
         let initialPayer = group.members.first?.id ?? UUID()
         _selectedPayerId = State(initialValue: initialPayer)
         _selectedSplitMemberIds = State(initialValue: Set(group.members.map { $0.id }))
+        _currency = State(initialValue: group.currency ?? "USD")
     }
 
     var body: some View {
@@ -40,9 +43,40 @@ struct AddLedgerExpenseSheet: View {
                             .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
                     }
 
+                    // Currency Picker Row
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("EXPENSE CURRENCY")
+                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                .foregroundColor(Color(white: 0.3))
+
+                            HStack(spacing: 6) {
+                                Text(currency)
+                                    .font(.system(size: 14, weight: .bold, design: .monospaced))
+                                    .foregroundColor(.black)
+
+                                Text(CurrencyRateService.symbol(for: currency))
+                                    .font(.system(size: 13, weight: .light, design: .monospaced))
+                                    .foregroundColor(Color(white: 0.5))
+                            }
+                        }
+
+                        Spacer()
+
+                        Button(action: { showingCurrencyPicker = true }) {
+                            Text("CHANGE")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .foregroundColor(.black)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
+                        }
+                    }
+                    .padding(.vertical, 4)
+
                     // Amount Field
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("AMOUNT ($)")
+                        Text("AMOUNT (\(currency))")
                             .font(.system(size: 11, weight: .bold, design: .monospaced))
                             .foregroundColor(Color(white: 0.3))
 
@@ -110,9 +144,14 @@ struct AddLedgerExpenseSheet: View {
 
                                         if let amount = Double(amountText), amount > 0, selectedSplitMemberIds.contains(member.id) {
                                             let share = amount / Double(selectedSplitMemberIds.count)
-                                            Text(String(format: "$%.2f", share))
-                                                .font(.system(size: 13, weight: .medium, design: .monospaced))
-                                                .foregroundColor(Color(white: 0.4))
+                                            CurrencyText(
+                                                share,
+                                                currency: currency,
+                                                font: .system(size: 13, weight: .medium, design: .monospaced),
+                                                amountWeight: .medium,
+                                                codeWeight: .light
+                                            )
+                                            .foregroundColor(Color(white: 0.4))
                                         }
                                     }
                                     .padding(.vertical, 8)
@@ -164,6 +203,51 @@ struct AddLedgerExpenseSheet: View {
                         .foregroundColor(.black)
                 }
             }
+            .sheet(isPresented: $showingCurrencyPicker) {
+                currencyPickerSheet()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func currencyPickerSheet() -> some View {
+        NavigationStack {
+            List {
+                ForEach(CurrencyRateService.supportedCurrencies, id: \.self) { code in
+                    Button(action: {
+                        self.currency = code
+                        showingCurrencyPicker = false
+                    }) {
+                        HStack {
+                            Text(code)
+                                .font(.system(size: 14, weight: .bold, design: .monospaced))
+                                .foregroundColor(.black)
+
+                            Text(CurrencyRateService.symbol(for: code))
+                                .font(.system(size: 14, weight: .light, design: .monospaced))
+                                .foregroundColor(Color(white: 0.5))
+
+                            Spacer()
+
+                            if currency == code {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(.black)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+            .listStyle(.plain)
+            .navigationTitle("Select Currency")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { showingCurrencyPicker = false }
+                        .foregroundColor(.black)
+                }
+            }
         }
     }
 
@@ -194,6 +278,7 @@ struct AddLedgerExpenseSheet: View {
         onAdd(
             trimmedTitle,
             amount,
+            currency,
             selectedPayerId,
             Array(selectedSplitMemberIds),
             trimmedNote.isEmpty ? nil : trimmedNote

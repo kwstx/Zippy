@@ -6,13 +6,16 @@ import SwiftUI
 /// Renders a minimalist pure white screen with black text lines titled “Simplified payments”.
 struct SimplifiedPaymentsView: View {
     let lines: [String]
+    var currency: String = "USD"
     @Environment(\.dismiss) private var dismiss
 
-    init(lines: [String]) {
+    init(lines: [String], currency: String = "USD") {
         self.lines = lines
+        self.currency = currency
     }
 
-    init(transfers: [SimplifiedPayment]) {
+    init(transfers: [SimplifiedPayment], currency: String = "USD") {
+        self.currency = currency
         if transfers.isEmpty {
             self.lines = ["All balances are settled. No transfers needed."]
         } else {
@@ -70,9 +73,9 @@ struct SimplifiedPaymentsView: View {
 #Preview {
     NavigationView {
         SimplifiedPaymentsView(lines: [
-            "Alice pays Bob $24.50",
-            "Charlie pays Bob $18.00",
-            "David pays Alice $12.25"
+            "Alice pays Bob $24.50 USD",
+            "Charlie pays Bob $18.00 USD",
+            "David pays Alice $12.25 USD"
         ])
     }
 }

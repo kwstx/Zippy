@@ -53,7 +53,7 @@ enum SettlementStatus: String, Codable, Equatable {
     case settled = "settled"
 }
 
-/// How much a single participant owes, broken down by component.
+/// How much a single participant owes, broken down by component with multi-currency support.
 struct PersonBalance: Identifiable, Codable, Equatable {
     var id: UUID { participantId }
     let participantId: UUID
@@ -62,10 +62,23 @@ struct PersonBalance: Identifiable, Codable, Equatable {
     let taxShare: Double
     let tipShare: Double
     let total: Double
+    var currency: String
+    var convertedItemsSubtotal: Double?
+    var convertedTaxShare: Double?
+    var convertedTipShare: Double?
+    var convertedTotal: Double?
+    var targetCurrency: String?
+    var exchangeRate: Double?
     var isPaid: Bool
     var paidAt: Date?
     var paymentMethod: String?
     var settlementStatus: SettlementStatus
+
+    enum CodingKeys: String, CodingKey {
+        case participantId, name, itemsSubtotal, taxShare, tipShare, total, currency
+        case convertedItemsSubtotal, convertedTaxShare, convertedTipShare, convertedTotal
+        case targetCurrency, exchangeRate, isPaid, paidAt, paymentMethod, settlementStatus
+    }
 
     init(
         participantId: UUID,
@@ -74,6 +87,13 @@ struct PersonBalance: Identifiable, Codable, Equatable {
         taxShare: Double,
         tipShare: Double,
         total: Double,
+        currency: String = "USD",
+        convertedItemsSubtotal: Double? = nil,
+        convertedTaxShare: Double? = nil,
+        convertedTipShare: Double? = nil,
+        convertedTotal: Double? = nil,
+        targetCurrency: String? = "USD",
+        exchangeRate: Double? = 1.0,
         isPaid: Bool = false,
         paidAt: Date? = nil,
         paymentMethod: String? = nil,
@@ -85,10 +105,42 @@ struct PersonBalance: Identifiable, Codable, Equatable {
         self.taxShare = taxShare
         self.tipShare = tipShare
         self.total = total
+        self.currency = currency
+        let rate = exchangeRate ?? 1.0
+        self.convertedItemsSubtotal = convertedItemsSubtotal ?? ((itemsSubtotal * rate * 100).rounded() / 100)
+        self.convertedTaxShare = convertedTaxShare ?? ((taxShare * rate * 100).rounded() / 100)
+        self.convertedTipShare = convertedTipShare ?? ((tipShare * rate * 100).rounded() / 100)
+        self.convertedTotal = convertedTotal ?? ((total * rate * 100).rounded() / 100)
+        self.targetCurrency = targetCurrency ?? "USD"
+        self.exchangeRate = rate
         self.isPaid = isPaid
         self.paidAt = paidAt
         self.paymentMethod = paymentMethod
         self.settlementStatus = isPaid ? .settled : settlementStatus
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        participantId = try container.decode(UUID.self, forKey: .participantId)
+        name = try container.decode(String.self, forKey: .name)
+        itemsSubtotal = try container.decode(Double.self, forKey: .itemsSubtotal)
+        taxShare = try container.decode(Double.self, forKey: .taxShare)
+        tipShare = try container.decode(Double.self, forKey: .tipShare)
+        total = try container.decode(Double.self, forKey: .total)
+        currency = try container.decodeIfPresent(String.self, forKey: .currency) ?? "USD"
+
+        let rate = try container.decodeIfPresent(Double.self, forKey: .exchangeRate) ?? 1.0
+        exchangeRate = rate
+        targetCurrency = try container.decodeIfPresent(String.self, forKey: .targetCurrency) ?? "USD"
+        convertedItemsSubtotal = try container.decodeIfPresent(Double.self, forKey: .convertedItemsSubtotal) ?? ((itemsSubtotal * rate * 100).rounded() / 100)
+        convertedTaxShare = try container.decodeIfPresent(Double.self, forKey: .convertedTaxShare) ?? ((taxShare * rate * 100).rounded() / 100)
+        convertedTipShare = try container.decodeIfPresent(Double.self, forKey: .convertedTipShare) ?? ((tipShare * rate * 100).rounded() / 100)
+        convertedTotal = try container.decodeIfPresent(Double.self, forKey: .convertedTotal) ?? ((total * rate * 100).rounded() / 100)
+
+        isPaid = try container.decodeIfPresent(Bool.self, forKey: .isPaid) ?? false
+        paidAt = try container.decodeIfPresent(Date.self, forKey: .paidAt)
+        paymentMethod = try container.decodeIfPresent(String.self, forKey: .paymentMethod)
+        settlementStatus = try container.decodeIfPresent(SettlementStatus.self, forKey: .settlementStatus) ?? (isPaid ? .settled : .unpaid)
     }
 }
 
@@ -97,16 +149,57 @@ struct SplitResult: Codable, Equatable {
     let balances: [PersonBalance]
     /// Sum of only the items that have been assigned to at least one person.
     let assignedSubtotal: Double
+    var currency: String = "USD"
+    var convertedAssignedSubtotal: Double? = nil
+
+    init(
+        balances: [PersonBalance],
+        assignedSubtotal: Double,
+        currency: String = "USD",
+        convertedAssignedSubtotal: Double? = nil
+    ) {
+        self.balances = balances
+        self.assignedSubtotal = assignedSubtotal
+        self.currency = currency
+        self.convertedAssignedSubtotal = convertedAssignedSubtotal ?? assignedSubtotal
+    }
 }
 
 /// A simplified payment transfer returned by the minimum-cash-flow algorithm.
 struct SimplifiedPayment: Identifiable, Codable, Equatable {
-    var id: String { "\(fromId)-\(toId)-\(amount)" }
+    var id: String { "\(fromId)-\(toId)-\(amount)-\(currency)" }
     let fromId: UUID
     let fromName: String
     let toId: UUID
     let toName: String
     let amount: Double
+    var currency: String
+    var originalAmount: Double?
+    var originalCurrency: String?
+    var exchangeRate: Double?
     let formattedText: String
-}
 
+    init(
+        fromId: UUID,
+        fromName: String,
+        toId: UUID,
+        toName: String,
+        amount: Double,
+        currency: String = "USD",
+        originalAmount: Double? = nil,
+        originalCurrency: String? = nil,
+        exchangeRate: Double? = 1.0,
+        formattedText: String
+    ) {
+        self.fromId = fromId
+        self.fromName = fromName
+        self.toId = toId
+        self.toName = toName
+        self.amount = amount
+        self.currency = currency
+        self.originalAmount = originalAmount ?? amount
+        self.originalCurrency = originalCurrency ?? currency
+        self.exchangeRate = exchangeRate ?? 1.0
+        self.formattedText = formattedText
+    }
+}

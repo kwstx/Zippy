@@ -8,6 +8,7 @@ enum GuestViewRenderer {
     /// Renders the complete HTML document for a split session.
     static func render(session: SplitSession, receipt: ExtractedReceipt, token: String, baseURL: String) -> String {
         let balances = session.balances
+        let sessionCurrency = session.currency ?? receipt.currency ?? "USD"
         let receiptTotal = receipt.total
         let totalCollected = balances.filter(\.isPaid).reduce(0.0) { $0 + $1.total }
         let paidCount = balances.filter(\.isPaid).count
@@ -93,6 +94,22 @@ enum GuestViewRenderer {
                 .price-mono {
                     font-family: var(--font-mono);
                     font-variant-numeric: tabular-nums;
+                }
+                .money-container {
+                    display: inline-flex;
+                    align-items: baseline;
+                    gap: 3px;
+                }
+                .money-val {
+                    font-weight: 700;
+                    color: #000000;
+                }
+                .money-cur {
+                    font-weight: 300;
+                    font-size: 0.72em;
+                    letter-spacing: 0.05em;
+                    color: #000000;
+                    opacity: 0.65;
                 }
                 /* Dividers */
                 .divider {
@@ -641,7 +658,7 @@ enum GuestViewRenderer {
                 <!-- Header -->
                 <div class="header-section">
                     <div class="mono-label">Zippy · Bill Split</div>
-                    <div class="price-lg price-mono">\(formatCurrency(receiptTotal))</div>
+                    <div class="price-lg price-mono">\(formatCurrency(receiptTotal, currency: sessionCurrency))</div>
                     <div class="status-badge \(isAllPaid ? "all-paid" : "")" id="headerStatusBadge">
                         \(isAllPaid ? "✓ ALL SETTLED" : "\(paidCount) OF \(totalCount) SETTLED")
                     </div>
@@ -651,8 +668,8 @@ enum GuestViewRenderer {
                         <div class="progress-bar-fill" id="progressBarFill"></div>
                     </div>
                     <div class="progress-text">
-                        <span id="collectedText">\(formatCurrency(totalCollected)) collected</span>
-                        <span id="remainingText">\(formatCurrency(max(0, receiptTotal - totalCollected))) remaining</span>
+                        <span id="collectedText">\(formatCurrency(totalCollected, currency: sessionCurrency)) collected</span>
+                        <span id="remainingText">\(formatCurrency(max(0, receiptTotal - totalCollected), currency: sessionCurrency)) remaining</span>
                     </div>
                     <div style="margin-top: 10px; text-align: right;">
                         <a href="/s/\(token)/simplified" style="font-family: var(--font-mono); font-size: 11px; color: var(--text); text-decoration: underline; text-transform: uppercase; letter-spacing: 0.05em;">Simplified payments →</a>
@@ -806,19 +823,19 @@ enum GuestViewRenderer {
                         <div class="divider" style="margin: 12px 0;"></div>
                         <div class="receipt-line sub-line">
                             <span>Subtotal</span>
-                            <span class="price-mono">\(formatCurrency(receipt.subtotal))</span>
+                            <span class="price-mono">\(formatCurrency(receipt.subtotal, currency: sessionCurrency))</span>
                         </div>
                         <div class="receipt-line sub-line">
                             <span>Tax</span>
-                            <span class="price-mono">\(formatCurrency(receipt.tax))</span>
+                            <span class="price-mono">\(formatCurrency(receipt.tax, currency: sessionCurrency))</span>
                         </div>
                         <div class="receipt-line sub-line">
                             <span>Tip</span>
-                            <span class="price-mono">\(formatCurrency(receipt.tip))</span>
+                            <span class="price-mono">\(formatCurrency(receipt.tip, currency: sessionCurrency))</span>
                         </div>
                         <div class="receipt-line total-line">
                             <span>Total</span>
-                            <span class="price-mono">\(formatCurrency(receipt.total))</span>
+                            <span class="price-mono">\(formatCurrency(receipt.total, currency: sessionCurrency))</span>
                         </div>
                     </div>
                 </div>
@@ -836,15 +853,17 @@ enum GuestViewRenderer {
             <script>
                 // Data models passed from server
                 const SESSION_TOKEN = "\(token)";
+                const SESSION_CURRENCY = "\(sessionCurrency)";
                 const RECEIPT_ITEMS = \(renderItemsJSON(receipt: receipt));
                 const ASSIGNMENTS = \(renderAssignmentsJSON(assignments: assignments));
                 let BALANCES = \(sessionDataJSON);
                 let selectedParticipantId = null;
                 let currentCategory = "\(session.category ?? "")";
 
-                // Format currency helper
-                function formatMoney(amount) {
-                    return '$' + (Number(amount) || 0).toFixed(2);
+                // Format currency helper (plain monochrome digits with lighter-weight currency code)
+                function formatMoney(amount, currency = (SESSION_CURRENCY || 'USD')) {
+                    const amt = (Number(amount) || 0).toFixed(2);
+                    return '<span class="money-container"><span class="money-val">' + amt + '</span> <span class="money-cur">' + currency + '</span></span>';
                 }
 
                 // Context Category Handler
@@ -1327,7 +1346,7 @@ enum GuestViewRenderer {
                         <div class="person-name">\(escapeHTML(balance.name))</div>
                     </div>
                     <div class="person-amount">
-                        <div class="person-total">\(formatCurrency(balance.total))</div>
+                        <div class="person-total">\(formatCurrency(balance.total, currency: balance.currency))</div>
                         <div class="status-tag-container">\(statusTag)</div>
                     </div>
                 </div>
@@ -1337,12 +1356,14 @@ enum GuestViewRenderer {
     }
 
     private static func renderReceiptItems(receipt: ExtractedReceipt) -> String {
+        let defaultCurrency = receipt.currency ?? "USD"
         return receipt.items.map { item in
             let qtyNote = item.quantity > 1 ? "<span style=\"color: var(--text-muted); font-size: 11px;\"> ×\(item.quantity)</span>" : ""
+            let itemCurrency = item.originalCurrency ?? defaultCurrency
             return """
             <div class="receipt-line">
                 <span>\(escapeHTML(item.name))\(qtyNote)</span>
-                <span class="price-mono">\(formatCurrency(item.price))</span>
+                <span class="price-mono">\(formatCurrency(item.price, currency: itemCurrency))</span>
             </div>
             """
         }.joined(separator: "\n")
@@ -1368,8 +1389,9 @@ enum GuestViewRenderer {
         }
     }
 
-    private static func formatCurrency(_ value: Double) -> String {
-        String(format: "$%.2f", value)
+    private static func formatCurrency(_ value: Double, currency: String = "USD") -> String {
+        let amt = String(format: "%.2f", value)
+        return "<span class=\"money-container\"><span class=\"money-val\">\(amt)</span> <span class=\"money-cur\">\(currency)</span></span>"
     }
 
     private static func escapeHTML(_ str: String) -> String {

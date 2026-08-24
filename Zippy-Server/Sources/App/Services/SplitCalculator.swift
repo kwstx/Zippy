@@ -7,9 +7,11 @@ import Foundation
 /// - Percentage
 /// - Shares
 /// - Exact
+///
+/// Stores both original currency amounts and live converted amounts with exchange rate at calculation time.
 enum SplitCalculator {
 
-    /// Unified split calculation dispatching to the selected split method.
+    /// Unified split calculation dispatching to the selected split method with multi-currency conversion support.
     static func calculate(
         method: SplitMethod = .itemized,
         items: [ReceiptItem],
@@ -17,6 +19,9 @@ enum SplitCalculator {
         tax: Double,
         tip: Double,
         total: Double,
+        currency: String = "USD",
+        targetCurrency: String = "USD",
+        exchangeRate: Double = 1.0,
         participants: [ParticipantDTO],
         assignments: [String: [UUID]]? = nil,
         percentageAllocations: [String: Double]? = nil,
@@ -35,7 +40,10 @@ enum SplitCalculator {
                 subtotal: effectiveSubtotal,
                 tax: tax,
                 tip: tip,
-                total: effectiveTotal
+                total: effectiveTotal,
+                currency: currency,
+                targetCurrency: targetCurrency,
+                exchangeRate: exchangeRate
             )
 
         case .itemized:
@@ -44,7 +52,10 @@ enum SplitCalculator {
                 participants: participants,
                 assignments: assignments ?? [:],
                 tax: tax,
-                tip: tip
+                tip: tip,
+                currency: currency,
+                targetCurrency: targetCurrency,
+                exchangeRate: exchangeRate
             )
 
         case .percentage:
@@ -54,7 +65,10 @@ enum SplitCalculator {
                 subtotal: effectiveSubtotal,
                 tax: tax,
                 tip: tip,
-                total: effectiveTotal
+                total: effectiveTotal,
+                currency: currency,
+                targetCurrency: targetCurrency,
+                exchangeRate: exchangeRate
             )
 
         case .shares:
@@ -64,7 +78,10 @@ enum SplitCalculator {
                 subtotal: effectiveSubtotal,
                 tax: tax,
                 tip: tip,
-                total: effectiveTotal
+                total: effectiveTotal,
+                currency: currency,
+                targetCurrency: targetCurrency,
+                exchangeRate: exchangeRate
             )
 
         case .exact:
@@ -74,7 +91,10 @@ enum SplitCalculator {
                 subtotal: effectiveSubtotal,
                 tax: tax,
                 tip: tip,
-                total: effectiveTotal
+                total: effectiveTotal,
+                currency: currency,
+                targetCurrency: targetCurrency,
+                exchangeRate: exchangeRate
             )
         }
     }
@@ -93,7 +113,10 @@ enum SplitCalculator {
             participants: participants,
             assignments: assignments,
             tax: tax,
-            tip: tip
+            tip: tip,
+            currency: "USD",
+            targetCurrency: "USD",
+            exchangeRate: 1.0
         )
     }
 
@@ -104,7 +127,10 @@ enum SplitCalculator {
         subtotal: Double,
         tax: Double,
         tip: Double,
-        total: Double
+        total: Double,
+        currency: String,
+        targetCurrency: String,
+        exchangeRate: Double
     ) -> [PersonBalanceDTO] {
         let count = Double(participants.count)
         guard count > 0 else { return [] }
@@ -121,7 +147,10 @@ enum SplitCalculator {
                 itemsSubtotal: perPersonSubtotal,
                 taxShare: perPersonTax,
                 tipShare: perPersonTip,
-                total: perPersonTotal
+                total: perPersonTotal,
+                currency: currency,
+                targetCurrency: targetCurrency,
+                exchangeRate: exchangeRate
             )
         }
 
@@ -138,7 +167,10 @@ enum SplitCalculator {
                 itemsSubtotal: b.itemsSubtotal,
                 taxShare: b.taxShare,
                 tipShare: b.tipShare,
-                total: round2(b.total + remainder)
+                total: round2(b.total + remainder),
+                currency: currency,
+                targetCurrency: targetCurrency,
+                exchangeRate: exchangeRate
             )
         }
 
@@ -152,7 +184,10 @@ enum SplitCalculator {
         participants: [ParticipantDTO],
         assignments: [String: [UUID]],
         tax: Double,
-        tip: Double
+        tip: Double,
+        currency: String,
+        targetCurrency: String,
+        exchangeRate: Double
     ) -> [PersonBalanceDTO] {
         guard !participants.isEmpty else { return [] }
 
@@ -176,8 +211,15 @@ enum SplitCalculator {
             let subtotal = personSubtotals[participant.id] ?? 0
             guard groupSubtotal > 0 else {
                 return PersonBalanceDTO(
-                    participantId: participant.id, name: participant.name,
-                    itemsSubtotal: 0, taxShare: 0, tipShare: 0, total: 0
+                    participantId: participant.id,
+                    name: participant.name,
+                    itemsSubtotal: 0,
+                    taxShare: 0,
+                    tipShare: 0,
+                    total: 0,
+                    currency: currency,
+                    targetCurrency: targetCurrency,
+                    exchangeRate: exchangeRate
                 )
             }
             let ratio = subtotal / groupSubtotal
@@ -185,9 +227,15 @@ enum SplitCalculator {
             let tipShare = round2(ratio * tip)
             let personTotal = round2(subtotal + taxShare + tipShare)
             return PersonBalanceDTO(
-                participantId: participant.id, name: participant.name,
-                itemsSubtotal: round2(subtotal), taxShare: taxShare,
-                tipShare: tipShare, total: personTotal
+                participantId: participant.id,
+                name: participant.name,
+                itemsSubtotal: round2(subtotal),
+                taxShare: taxShare,
+                tipShare: tipShare,
+                total: personTotal,
+                currency: currency,
+                targetCurrency: targetCurrency,
+                exchangeRate: exchangeRate
             )
         }
 
@@ -198,9 +246,15 @@ enum SplitCalculator {
            let maxIndex = balances.indices.max(by: { balances[$0].total < balances[$1].total }) {
             let b = balances[maxIndex]
             balances[maxIndex] = PersonBalanceDTO(
-                participantId: b.participantId, name: b.name,
-                itemsSubtotal: b.itemsSubtotal, taxShare: b.taxShare,
-                tipShare: b.tipShare, total: round2(b.total + remainder)
+                participantId: b.participantId,
+                name: b.name,
+                itemsSubtotal: b.itemsSubtotal,
+                taxShare: b.taxShare,
+                tipShare: b.tipShare,
+                total: round2(b.total + remainder),
+                currency: currency,
+                targetCurrency: targetCurrency,
+                exchangeRate: exchangeRate
             )
         }
 
@@ -215,12 +269,14 @@ enum SplitCalculator {
         subtotal: Double,
         tax: Double,
         tip: Double,
-        total: Double
+        total: Double,
+        currency: String,
+        targetCurrency: String,
+        exchangeRate: Double
     ) -> [PersonBalanceDTO] {
         let count = Double(participants.count)
         guard count > 0 else { return [] }
 
-        // Determine percentage per participant
         var userPercentages: [UUID: Double] = [:]
         var totalSpecifiedPct: Double = 0
         for p in participants {
@@ -230,7 +286,6 @@ enum SplitCalculator {
             }
         }
 
-        // If no percentages provided or sum is 0, default to equal division (100% / N)
         if totalSpecifiedPct <= 0 {
             for p in participants {
                 userPercentages[p.id] = 100.0 / count
@@ -251,11 +306,13 @@ enum SplitCalculator {
                 itemsSubtotal: pSubtotal,
                 taxShare: pTax,
                 tipShare: pTip,
-                total: pTotal
+                total: pTotal,
+                currency: currency,
+                targetCurrency: targetCurrency,
+                exchangeRate: exchangeRate
             )
         }
 
-        // Remainder adjustment
         let expectedTotal = round2(subtotal + tax + tip)
         let actualTotal = balances.reduce(0.0) { $0 + $1.total }
         let remainder = round2(expectedTotal - actualTotal)
@@ -263,9 +320,15 @@ enum SplitCalculator {
            let maxIndex = balances.indices.max(by: { balances[$0].total < balances[$1].total }) {
             let b = balances[maxIndex]
             balances[maxIndex] = PersonBalanceDTO(
-                participantId: b.participantId, name: b.name,
-                itemsSubtotal: b.itemsSubtotal, taxShare: b.taxShare,
-                tipShare: b.tipShare, total: round2(b.total + remainder)
+                participantId: b.participantId,
+                name: b.name,
+                itemsSubtotal: b.itemsSubtotal,
+                taxShare: b.taxShare,
+                tipShare: b.tipShare,
+                total: round2(b.total + remainder),
+                currency: currency,
+                targetCurrency: targetCurrency,
+                exchangeRate: exchangeRate
             )
         }
 
@@ -280,7 +343,10 @@ enum SplitCalculator {
         subtotal: Double,
         tax: Double,
         tip: Double,
-        total: Double
+        total: Double,
+        currency: String,
+        targetCurrency: String,
+        exchangeRate: Double
     ) -> [PersonBalanceDTO] {
         let count = Double(participants.count)
         guard count > 0 else { return [] }
@@ -313,7 +379,10 @@ enum SplitCalculator {
                 itemsSubtotal: pSubtotal,
                 taxShare: pTax,
                 tipShare: pTip,
-                total: pTotal
+                total: pTotal,
+                currency: currency,
+                targetCurrency: targetCurrency,
+                exchangeRate: exchangeRate
             )
         }
 
@@ -324,9 +393,15 @@ enum SplitCalculator {
            let maxIndex = balances.indices.max(by: { balances[$0].total < balances[$1].total }) {
             let b = balances[maxIndex]
             balances[maxIndex] = PersonBalanceDTO(
-                participantId: b.participantId, name: b.name,
-                itemsSubtotal: b.itemsSubtotal, taxShare: b.taxShare,
-                tipShare: b.tipShare, total: round2(b.total + remainder)
+                participantId: b.participantId,
+                name: b.name,
+                itemsSubtotal: b.itemsSubtotal,
+                taxShare: b.taxShare,
+                tipShare: b.tipShare,
+                total: round2(b.total + remainder),
+                currency: currency,
+                targetCurrency: targetCurrency,
+                exchangeRate: exchangeRate
             )
         }
 
@@ -341,7 +416,10 @@ enum SplitCalculator {
         subtotal: Double,
         tax: Double,
         tip: Double,
-        total: Double
+        total: Double,
+        currency: String,
+        targetCurrency: String,
+        exchangeRate: Double
     ) -> [PersonBalanceDTO] {
         let count = Double(participants.count)
         guard count > 0 else { return [] }
@@ -360,7 +438,10 @@ enum SplitCalculator {
                 itemsSubtotal: pSubtotal,
                 taxShare: pTax,
                 tipShare: pTip,
-                total: round2(pTotal)
+                total: round2(pTotal),
+                currency: currency,
+                targetCurrency: targetCurrency,
+                exchangeRate: exchangeRate
             )
         }
     }

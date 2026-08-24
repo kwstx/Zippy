@@ -106,6 +106,7 @@ struct ReceiptResultView: View {
                     participantId: receipt.id ?? UUID(),
                     participantName: "Bill Total",
                     amount: receipt.total,
+                    currency: receipt.effectiveCurrency,
                     token: nil,
                     settlementStatus: settlementStatus,
                     selectedMethod: selectedPaymentMethod,
@@ -174,9 +175,14 @@ struct ReceiptResultView: View {
             
             Spacer()
             
-            Text(formatPrice(item.price))
-                .font(.system(.body, design: .monospaced))
-                .foregroundColor(.white)
+            CurrencyText(
+                item.price,
+                currency: item.originalCurrency ?? receipt.effectiveCurrency,
+                font: .system(.body, design: .monospaced),
+                amountWeight: .regular,
+                codeWeight: .light
+            )
+            .foregroundColor(.white)
         }
         .padding(.vertical, 12)
     }
@@ -190,9 +196,14 @@ struct ReceiptResultView: View {
             
             Spacer()
             
-            Text(formatPrice(amount))
-                .font(.system(.body, design: .monospaced))
-                .foregroundColor(Color(white: 0.7))
+            CurrencyText(
+                amount,
+                currency: receipt.effectiveCurrency,
+                font: .system(.body, design: .monospaced),
+                amountWeight: .regular,
+                codeWeight: .light
+            )
+            .foregroundColor(Color(white: 0.7))
         }
         .padding(.vertical, 12)
     }
@@ -207,10 +218,14 @@ struct ReceiptResultView: View {
             
             Spacer()
             
-            Text(formatPrice(amount))
-                .font(.system(.body, design: .monospaced))
-                .fontWeight(.bold)
-                .foregroundColor(.white)
+            CurrencyText(
+                amount,
+                currency: receipt.effectiveCurrency,
+                font: .system(.body, design: .monospaced),
+                amountWeight: .bold,
+                codeWeight: .light
+            )
+            .foregroundColor(.white)
         }
         .padding(.vertical, 14)
     }
@@ -269,11 +284,5 @@ struct ReceiptResultView: View {
         Rectangle()
             .fill(Color(white: 0.2))
             .frame(height: 0.5)
-    }
-    
-    // MARK: - Helpers
-    
-    private func formatPrice(_ value: Double) -> String {
-        String(format: "$%.2f", value)
     }
 }

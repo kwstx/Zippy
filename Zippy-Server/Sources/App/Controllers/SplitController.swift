@@ -23,7 +23,7 @@ struct SplitController {
         return "\(baseURL)/s/\(token)"
     }
 
-    /// Converts a SplitSession model and receipt into SplitSessionResponse DTO.
+    /// Converts a SplitSession model and receipt into SplitSessionResponse DTO with multi-currency data.
     private static func makeSplitSessionResponse(session: SplitSession, receipt: ExtractedReceipt?, req: Request) -> SplitSessionResponse {
         let token = session.shareToken ?? session.id!.uuidString
         let shareableURL = session.shareToken != nil
@@ -31,6 +31,10 @@ struct SplitController {
             : "/api/splits/\(session.id!.uuidString)"
         let method = session.splitMethod.flatMap(SplitMethod.init(rawValue:)) ?? .itemized
         let total = receipt?.total ?? session.balances.reduce(0.0) { $0 + $1.total }
+        let currency = session.currency ?? receipt?.currency ?? "USD"
+        let targetCurrency = session.targetCurrency ?? receipt?.targetCurrency ?? "USD"
+        let exchangeRate = session.exchangeRate ?? receipt?.exchangeRate ?? 1.0
+        let convertedTotal = receipt?.convertedTotal ?? ((total * exchangeRate * 100).rounded() / 100)
 
         return SplitSessionResponse(
             id: session.id!,
@@ -43,13 +47,17 @@ struct SplitController {
             exactAllocations: session.exactAllocations,
             balances: session.balances,
             receiptTotal: total,
+            currency: currency,
+            targetCurrency: targetCurrency,
+            exchangeRate: exchangeRate,
+            convertedReceiptTotal: convertedTotal,
             category: session.category ?? receipt?.category,
             shareableURL: shareableURL,
             createdAt: session.createdAt
         )
     }
 
-    /// Creates or updates a split session with server-computed balances.
+    /// Creates or updates a split session with server-computed balances, consulting live exchange rates.
     @Sendable
     func create(req: Request) async throws -> SplitSessionResponse {
         let input = try req.content.decode(CreateSplitRequest.self)
@@ -62,7 +70,12 @@ struct SplitController {
         let selectedMethod = input.splitMethod ?? .itemized
         let assignments = input.assignments ?? [:]
 
-        // Compute authoritative balances across flexible methods
+        // Multi-currency: consult live rate service at calculation time
+        let currency = input.currency ?? receipt.currency ?? "USD"
+        let targetCurrency = input.targetCurrency ?? receipt.targetCurrency ?? "USD"
+        let rate = await ExchangeRateService.getRate(from: currency, to: targetCurrency, client: req.client)
+
+        // Compute authoritative balances across flexible methods with live exchange rate
         let balances = SplitCalculator.calculate(
             method: selectedMethod,
             items: receipt.items,
@@ -70,6 +83,9 @@ struct SplitController {
             tax: receipt.tax,
             tip: receipt.tip,
             total: receipt.total,
+            currency: currency,
+            targetCurrency: targetCurrency,
+            exchangeRate: rate,
             participants: input.participants,
             assignments: assignments,
             percentageAllocations: input.percentageAllocations,
@@ -96,6 +112,9 @@ struct SplitController {
             existing.shareAllocations = input.shareAllocations
             existing.exactAllocations = input.exactAllocations
             existing.balances = balances
+            existing.currency = currency
+            existing.targetCurrency = targetCurrency
+            existing.exchangeRate = rate
             existing.category = categoryTag
             if existing.shareToken == nil {
                 existing.shareToken = Self.generateSecureToken()
@@ -114,6 +133,9 @@ struct SplitController {
                 shareAllocations: input.shareAllocations,
                 exactAllocations: input.exactAllocations,
                 balances: balances,
+                currency: currency,
+                targetCurrency: targetCurrency,
+                exchangeRate: rate,
                 shareToken: generatedToken,
                 category: categoryTag
             )
@@ -122,7 +144,7 @@ struct SplitController {
             token = generatedToken
         }
 
-        req.logger.info("Split session \(session.id?.uuidString ?? "?") saved for receipt \(input.receiptId) with method '\(selectedMethod.rawValue)' and token \(token)")
+        req.logger.info("Split session \(session.id?.uuidString ?? "?") saved for receipt \(input.receiptId) [\(currency) -> \(targetCurrency) @ \(rate)] with method '\(selectedMethod.rawValue)' and token \(token)")
 
         return Self.makeSplitSessionResponse(session: session, receipt: receipt, req: req)
     }
@@ -138,7 +160,6 @@ struct SplitController {
             throw Abort(.notFound, reason: "No split session found with ID: \(id)")
         }
 
-        // Load receipt for the total
         let receipt = try await ExtractedReceipt.find(session.receiptId, on: req.db)
         return Self.makeSplitSessionResponse(session: session, receipt: receipt, req: req)
     }
@@ -168,7 +189,7 @@ struct SplitController {
             return try await responseDTO.encodeResponse(for: req)
         }
 
-        // Render lightweight black-and-white minimalist Uber-aesthetic HTML page
+        // Render lightweight black-and-white minimalist HTML page with monochrome lighter-weight currency display
         let baseURL = Environment.get("BASE_URL") ?? "http://localhost:8080"
         let html = GuestViewRenderer.render(
             session: session,
@@ -216,6 +237,7 @@ struct SplitController {
     private static func paymentDetails(
         method: String,
         amount: Double,
+        currency: String = "USD",
         participantName: String,
         token: String
     ) -> (deepLink: String?, instructions: String?) {
@@ -227,17 +249,17 @@ struct SplitController {
         switch method.lowercased() {
         case "venmo":
             let deepLink = "venmo://paycharge?txn=pay&amount=\(formattedAmount)&note=\(encodedNote)"
-            let instructions = "Open Venmo to pay $\(formattedAmount). Settlement status will flip to settled upon webhook or manual confirmation."
+            let instructions = "Open Venmo to pay \(formattedAmount) \(currency). Settlement status will flip to settled upon webhook or manual confirmation."
             return (deepLink, instructions)
 
         case "paypal":
             let deepLink = "https://www.paypal.com/paypalme/zippysplit/\(formattedAmount)"
-            let instructions = "Open PayPal to transfer $\(formattedAmount). Include reference \(reference) in note. Settlement flips to settled upon webhook or manual confirmation."
+            let instructions = "Open PayPal to transfer \(formattedAmount) \(currency). Include reference \(reference) in note. Settlement flips to settled upon webhook or manual confirmation."
             return (deepLink, instructions)
 
         case "cash app", "cashapp", "cash_app":
             let deepLink = "https://cash.app/$zippysplit/\(formattedAmount)"
-            let instructions = "Open Cash App to send $\(formattedAmount). Include note \(reference). Settlement flips to settled upon webhook or manual confirmation."
+            let instructions = "Open Cash App to send \(formattedAmount) \(currency). Include note \(reference). Settlement flips to settled upon webhook or manual confirmation."
             return (deepLink, instructions)
 
         case "bank transfer", "bank_transfer", "ach", "wire":
@@ -246,6 +268,8 @@ struct SplitController {
             Routing Number: 021000021
             Account Number: 9876543210
             Account Name: Zippy Split Host
+            Currency: \(currency)
+            Amount: \(formattedAmount)
             Reference Code: \(reference)
             Instructions: Include reference code in transfer memo. Settlement status flips upon bank webhook confirmation or manual confirmation.
             """
@@ -296,6 +320,7 @@ struct SplitController {
         let details = Self.paymentDetails(
             method: input.paymentMethod,
             amount: balance.total,
+            currency: balance.currency,
             participantName: balance.name,
             token: tokenString
         )
@@ -361,6 +386,7 @@ struct SplitController {
             settlementStatus: .settled,
             paidAt: balance.paidAt ?? Date(),
             totalPaid: balance.total,
+            currency: balance.currency,
             message: "Settlement confirmed for \(balance.name)"
         )
     }
@@ -379,7 +405,6 @@ struct SplitController {
         } else if let sessionId = payload.sessionId {
             session = try await SplitSession.find(sessionId, on: req.db)
         } else if let participantId = payload.participantId {
-            // Find any session containing this participant
             let allSessions = try await SplitSession.query(on: req.db).all()
             session = allSessions.first(where: { s in
                 s.balances.contains(where: { $0.participantId == participantId })
@@ -461,6 +486,7 @@ struct SplitController {
             settlementStatus: .settled,
             paidAt: balance.paidAt ?? Date(),
             totalPaid: balance.total,
+            currency: balance.currency,
             message: "Payment successfully recorded for \(balance.name)"
         )
     }
@@ -481,12 +507,15 @@ struct SplitController {
         let total = session.balances.reduce(0.0) { $0 + $1.total }
         let totalCollected = session.balances.filter(\.isPaid).reduce(0.0) { $0 + $1.total }
         let isFullySettled = !session.balances.isEmpty && session.balances.allSatisfy(\.isPaid)
+        let currency = session.currency ?? "USD"
 
         let participants = session.balances.map {
             SplitStatusResponse.ParticipantStatusDTO(
                 id: $0.participantId,
                 name: $0.name,
                 total: $0.total,
+                currency: $0.currency,
+                convertedTotal: $0.convertedTotal,
                 isPaid: $0.isPaid,
                 settlementStatus: $0.settlementStatus,
                 paidAt: $0.paidAt,
@@ -498,24 +527,27 @@ struct SplitController {
             sessionId: session.id ?? UUID(),
             total: total,
             totalCollected: totalCollected,
+            currency: currency,
             isFullySettled: isFullySettled,
             participants: participants
         )
     }
 
-    /// Optimizes multiple expenses into the minimal number of direct transfers using the pure-Swift minimum cash flow algorithm.
+    /// Optimizes multiple expenses into minimal direct transfers.
     @Sendable
     func simplifyExpenses(req: Request) async throws -> SimplifyExpensesResponse {
         let input = try req.content.decode(SimplifyExpensesRequest.self)
+        let baseCurrency = input.baseCurrency ?? "USD"
         let response = MinimumCashFlowCalculator.simplifyExpenses(
             participants: input.participants,
-            expenses: input.expenses
+            expenses: input.expenses,
+            currency: baseCurrency
         )
         req.logger.info("Simplified \(input.expenses.count) expenses for \(input.participants.count) participants into \(response.transferCount) transfers")
         return response
     }
 
-    /// Retrieves simplified payments for an existing split session, rendering either JSON or a minimalist white HTML screen.
+    /// Retrieves simplified payments for an existing split session.
     @Sendable
     func getSimplifiedPayments(req: Request) async throws -> Response {
         guard let token = req.parameters.get("token") else {
@@ -528,7 +560,10 @@ struct SplitController {
             throw Abort(.notFound, reason: "No split session found for token: \(token)")
         }
 
-        let simplified = MinimumCashFlowCalculator.simplifyBalances(balances: session.balances)
+        let simplified = MinimumCashFlowCalculator.simplifyBalances(
+            balances: session.balances,
+            currency: session.currency ?? "USD"
+        )
 
         let acceptHeader = req.headers.first(name: .accept) ?? ""
         let isJsonRequest = acceptHeader.contains("application/json") && !acceptHeader.contains("text/html")
@@ -555,9 +590,9 @@ struct SplitController {
     @Sendable
     func viewSimplifiedPaymentsStandalone(req: Request) async throws -> Response {
         let sampleLines = [
-            "Alice pays Bob $24.50",
-            "Charlie pays Bob $18.00",
-            "David pays Alice $12.25"
+            "Alice pays Bob 24.50 USD",
+            "Charlie pays Bob 18.00 USD",
+            "David pays Alice 12.25 USD"
         ]
 
         let baseURL = Environment.get("BASE_URL") ?? "http://localhost:8080"
@@ -600,7 +635,6 @@ struct SplitController {
         session.category = input.category
         try await session.update(on: req.db)
 
-        // Also update linked receipt if present
         if let receipt = try await ExtractedReceipt.find(session.receiptId, on: req.db) {
             receipt.category = input.category
             try await receipt.update(on: req.db)
@@ -612,7 +646,7 @@ struct SplitController {
         return Self.makeSplitSessionResponse(session: session, receipt: receipt, req: req)
     }
 
-    /// Updates the split method and recalculates allocations & balances on the backend.
+    /// Updates the split method and recalculates allocations & balances on the backend using live exchange rate.
     @Sendable
     func updateSplitMethod(req: Request) async throws -> SplitSessionResponse {
         let token = req.parameters.get("token")
@@ -657,6 +691,15 @@ struct SplitController {
         }
         session.splitMethod = input.splitMethod.rawValue
 
+        // Consult live exchange rate
+        let currency = input.currency ?? session.currency ?? receipt.currency ?? "USD"
+        let targetCurrency = input.targetCurrency ?? session.targetCurrency ?? receipt.targetCurrency ?? "USD"
+        let rate = await ExchangeRateService.getRate(from: currency, to: targetCurrency, client: req.client)
+
+        session.currency = currency
+        session.targetCurrency = targetCurrency
+        session.exchangeRate = rate
+
         // Authoritative recalculation on the backend
         let balances = SplitCalculator.calculate(
             method: input.splitMethod,
@@ -665,6 +708,9 @@ struct SplitController {
             tax: receipt.tax,
             tip: receipt.tip,
             total: receipt.total,
+            currency: currency,
+            targetCurrency: targetCurrency,
+            exchangeRate: rate,
             participants: session.participants,
             assignments: session.assignments,
             percentageAllocations: session.percentageAllocations,
@@ -680,7 +726,7 @@ struct SplitController {
         return Self.makeSplitSessionResponse(session: session, receipt: receipt, req: req)
     }
 
-    /// Returns past split sessions and receipts filtered by optional category tag and text search.
+    /// Returns past split sessions and receipts filtered by optional category tag, search query, and currency.
     @Sendable
     func getHistory(req: Request) async throws -> [HistoryItemDTO] {
         let query = try? req.query.decode(HistoryFilterQuery.self)
@@ -711,6 +757,10 @@ struct SplitController {
 
             let effectiveCategory = session.category ?? receipt?.category
             let total = receipt?.total ?? session.balances.reduce(0.0) { $0 + $1.total }
+            let currency = session.currency ?? receipt?.currency ?? "USD"
+            let targetCurrency = session.targetCurrency ?? receipt?.targetCurrency ?? "USD"
+            let exchangeRate = session.exchangeRate ?? receipt?.exchangeRate ?? 1.0
+            let convertedTotal = receipt?.convertedTotal ?? ((total * exchangeRate * 100).rounded() / 100)
             let isSettled = !session.balances.isEmpty && session.balances.allSatisfy(\.isPaid)
             let token = session.shareToken ?? sessionId.uuidString
             let shareURL = Self.makeShortURL(for: token, req: req)
@@ -731,6 +781,10 @@ struct SplitController {
                 title: title,
                 category: effectiveCategory,
                 total: total,
+                currency: currency,
+                convertedTotal: convertedTotal,
+                targetCurrency: targetCurrency,
+                exchangeRate: exchangeRate,
                 createdAt: session.createdAt,
                 participantCount: session.participants.count,
                 isSettled: isSettled,
@@ -744,6 +798,10 @@ struct SplitController {
             guard let rId = receipt.id, !processedReceiptIds.contains(rId) else { continue }
             let title = receipt.items.first?.name ?? "Receipt (\(receipt.referenceId.prefix(6)))"
             let itemsSummary = receipt.items.prefix(4).map(\.name)
+            let currency = receipt.currency ?? "USD"
+            let targetCurrency = receipt.targetCurrency ?? "USD"
+            let exchangeRate = receipt.exchangeRate ?? 1.0
+            let convertedTotal = receipt.convertedTotal ?? ((receipt.total * exchangeRate * 100).rounded() / 100)
 
             historyItems.append(HistoryItemDTO(
                 id: rId,
@@ -751,6 +809,10 @@ struct SplitController {
                 title: title,
                 category: receipt.category,
                 total: receipt.total,
+                currency: currency,
+                convertedTotal: convertedTotal,
+                targetCurrency: targetCurrency,
+                exchangeRate: exchangeRate,
                 createdAt: receipt.createdAt,
                 participantCount: 0,
                 isSettled: false,
@@ -774,11 +836,11 @@ struct SplitController {
                 let matchesCategory = item.category?.lowercased().contains(search) ?? false
                 let matchesItems = item.itemsSummary?.contains { $0.lowercased().contains(search) } ?? false
                 let matchesTotal = String(format: "%.2f", item.total).contains(search)
-                return matchesTitle || matchesCategory || matchesItems || matchesTotal
+                let matchesCurrency = item.currency.lowercased().contains(search)
+                return matchesTitle || matchesCategory || matchesItems || matchesTotal || matchesCurrency
             }
         }
 
         return historyItems
     }
 }
-

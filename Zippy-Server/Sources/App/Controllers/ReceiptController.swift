@@ -89,7 +89,7 @@ struct ReceiptController {
         return receipt
     }
 
-    /// Creates a manually entered receipt directly into the database.
+    /// Creates a manually entered receipt directly into the database with live exchange rate conversion.
     @Sendable
     func createManual(req: Request) async throws -> ExtractedReceipt {
         let input = try req.content.decode(CreateManualReceiptRequest.self)
@@ -111,6 +111,11 @@ struct ReceiptController {
         let effectiveTotal = statedTotal > 0 ? statedTotal : validation.computedTotal
         let refId = input.referenceId ?? "manual-\(UUID().uuidString.prefix(8))"
 
+        let currency = input.currency ?? "USD"
+        let targetCurrency = input.targetCurrency ?? "USD"
+        let rate = await ExchangeRateService.getRate(from: currency, to: targetCurrency, client: req.client)
+        let convertedTotal = (effectiveTotal * rate * 100).rounded() / 100
+
         let receipt = ExtractedReceipt(
             referenceId: refId,
             items: input.items,
@@ -118,11 +123,15 @@ struct ReceiptController {
             tax: statedTax,
             tip: statedTip,
             total: effectiveTotal,
-            category: input.category
+            category: input.category,
+            currency: currency,
+            targetCurrency: targetCurrency,
+            exchangeRate: rate,
+            convertedTotal: convertedTotal
         )
 
         try await receipt.save(on: req.db)
-        req.logger.info("Manually created receipt \(receipt.id?.uuidString ?? "?") with \(input.items.count) items, total $\(effectiveTotal)")
+        req.logger.info("Manually created receipt \(receipt.id?.uuidString ?? "?") with \(input.items.count) items, total \(effectiveTotal) \(currency) (\(convertedTotal) \(targetCurrency))")
         return receipt
     }
 
@@ -162,6 +171,14 @@ struct ReceiptController {
             receipt.referenceId = newRef
         }
 
+        let currency = input.currency ?? receipt.currency ?? "USD"
+        let targetCurrency = input.targetCurrency ?? receipt.targetCurrency ?? "USD"
+        let rate = await ExchangeRateService.getRate(from: currency, to: targetCurrency, client: req.client)
+        receipt.currency = currency
+        receipt.targetCurrency = targetCurrency
+        receipt.exchangeRate = rate
+        receipt.convertedTotal = (receipt.total * rate * 100).rounded() / 100
+
         // Re-run authoritative validation
         let validation = ReceiptValidator.validate(
             items: receipt.items,
@@ -173,7 +190,7 @@ struct ReceiptController {
 
         // Save updated receipt
         try await receipt.update(on: req.db)
-        req.logger.info("Receipt \(id) patched: \(receipt.items.count) items, subtotal $\(receipt.subtotal), total $\(receipt.total). Valid: \(validation.isValid), Math: \(validation.isMathConsistent)")
+        req.logger.info("Receipt \(id) patched: \(receipt.items.count) items, subtotal \(receipt.subtotal), total \(receipt.total) \(currency) (@ rate \(rate) \(targetCurrency)). Valid: \(validation.isValid), Math: \(validation.isMathConsistent)")
 
         // Re-calculate linked SplitSession if active, to immediately synchronize the shareable link state
         var splitResponse: SplitSessionResponse? = nil
@@ -181,6 +198,10 @@ struct ReceiptController {
 
         if let session = try await SplitSession.query(on: req.db).filter(\.$receiptId == id).first() {
             let method = session.splitMethod.flatMap(SplitMethod.init(rawValue:)) ?? .itemized
+            session.currency = currency
+            session.targetCurrency = targetCurrency
+            session.exchangeRate = rate
+
             // Recompute authoritative per-person balances with updated receipt items and taxes
             let updatedBalances = SplitCalculator.calculate(
                 method: method,
@@ -189,6 +210,9 @@ struct ReceiptController {
                 tax: receipt.tax,
                 tip: receipt.tip,
                 total: receipt.total,
+                currency: currency,
+                targetCurrency: targetCurrency,
+                exchangeRate: rate,
                 participants: session.participants,
                 assignments: session.assignments,
                 percentageAllocations: session.percentageAllocations,
@@ -230,6 +254,10 @@ struct ReceiptController {
                 exactAllocations: session.exactAllocations,
                 balances: session.balances,
                 receiptTotal: receipt.total,
+                currency: currency,
+                targetCurrency: targetCurrency,
+                exchangeRate: rate,
+                convertedReceiptTotal: receipt.convertedTotal,
                 category: session.category,
                 shareableURL: url,
                 createdAt: session.createdAt
@@ -299,7 +327,8 @@ struct ReceiptController {
                 let matchesItems = receipt.items.contains { $0.name.lowercased().contains(search) }
                 let matchesTotal = String(format: "%.2f", receipt.total).contains(search)
                 let matchesCategory = receipt.category?.lowercased().contains(search) ?? false
-                return matchesRef || matchesItems || matchesTotal || matchesCategory
+                let matchesCurrency = (receipt.currency ?? "USD").lowercased().contains(search)
+                return matchesRef || matchesItems || matchesTotal || matchesCategory || matchesCurrency
             }
         }
 

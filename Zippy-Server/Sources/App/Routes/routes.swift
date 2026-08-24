@@ -53,6 +53,11 @@ func routes(_ app: Application) throws {
         api.group("webhooks") { webhooks in
             webhooks.post("payment", use: splitController.handleWebhook)
         }
+
+        api.get("rates") { req async -> [String: Double] in
+            let base = (try? req.query.get(String.self, at: "base")) ?? "USD"
+            return await ExchangeRateService.getRates(base: base, client: req.client)
+        }
     }
     
     // Short URL shareable guest endpoints (unauthenticated web access)

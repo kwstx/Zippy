@@ -4,21 +4,24 @@ import SwiftUI
 
 struct RecordSettlementSheet: View {
     let group: PersistentGroup
-    let onRecord: (UUID, UUID, Double, String?) -> Void
+    let onRecord: (UUID, UUID, Double, String, String?) -> Void
     @Environment(\.dismiss) private var dismiss
 
     @State private var payerId: UUID
     @State private var payeeId: UUID
     @State private var amountText: String = ""
+    @State private var currency: String
     @State private var note: String = ""
+    @State private var showingCurrencyPicker = false
 
-    init(group: PersistentGroup, onRecord: @escaping (UUID, UUID, Double, String?) -> Void) {
+    init(group: PersistentGroup, onRecord: @escaping (UUID, UUID, Double, String, String?) -> Void) {
         self.group = group
         self.onRecord = onRecord
         let first = group.members.first?.id ?? UUID()
         let second = group.members.count > 1 ? group.members[1].id : first
         _payerId = State(initialValue: first)
         _payeeId = State(initialValue: second)
+        _currency = State(initialValue: group.currency ?? "USD")
     }
 
     var body: some View {
@@ -52,9 +55,40 @@ struct RecordSettlementSheet: View {
                     .pickerStyle(.segmented)
                 }
 
+                // Currency Row
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("SETTLEMENT CURRENCY")
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .foregroundColor(Color(white: 0.3))
+
+                        HStack(spacing: 6) {
+                            Text(currency)
+                                .font(.system(size: 14, weight: .bold, design: .monospaced))
+                                .foregroundColor(.black)
+
+                            Text(CurrencyRateService.symbol(for: currency))
+                                .font(.system(size: 13, weight: .light, design: .monospaced))
+                                .foregroundColor(Color(white: 0.5))
+                        }
+                    }
+
+                    Spacer()
+
+                    Button(action: { showingCurrencyPicker = true }) {
+                        Text("CHANGE")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundColor(.black)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
+                    }
+                }
+                .padding(.vertical, 2)
+
                 // Amount Field
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("SETTLEMENT AMOUNT ($)")
+                    Text("SETTLEMENT AMOUNT (\(currency))")
                         .font(.system(size: 11, weight: .bold, design: .monospaced))
                         .foregroundColor(Color(white: 0.3))
 
@@ -107,6 +141,51 @@ struct RecordSettlementSheet: View {
                         .foregroundColor(.black)
                 }
             }
+            .sheet(isPresented: $showingCurrencyPicker) {
+                currencyPickerSheet()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func currencyPickerSheet() -> some View {
+        NavigationStack {
+            List {
+                ForEach(CurrencyRateService.supportedCurrencies, id: \.self) { code in
+                    Button(action: {
+                        self.currency = code
+                        showingCurrencyPicker = false
+                    }) {
+                        HStack {
+                            Text(code)
+                                .font(.system(size: 14, weight: .bold, design: .monospaced))
+                                .foregroundColor(.black)
+
+                            Text(CurrencyRateService.symbol(for: code))
+                                .font(.system(size: 14, weight: .light, design: .monospaced))
+                                .foregroundColor(Color(white: 0.5))
+
+                            Spacer()
+
+                            if currency == code {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(.black)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+            .listStyle(.plain)
+            .navigationTitle("Select Currency")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { showingCurrencyPicker = false }
+                        .foregroundColor(.black)
+                }
+            }
         }
     }
 
@@ -122,7 +201,7 @@ struct RecordSettlementSheet: View {
     private func save() {
         guard let amount = Double(amountText), amount > 0, payerId != payeeId else { return }
         let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
-        onRecord(payerId, payeeId, amount, trimmedNote.isEmpty ? nil : trimmedNote)
+        onRecord(payerId, payeeId, amount, currency, trimmedNote.isEmpty ? nil : trimmedNote)
         dismiss()
     }
 }

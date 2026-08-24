@@ -62,9 +62,14 @@ struct SplitMethodControlsView: View {
                         Text("Each person pays")
                             .font(.system(.caption, design: .monospaced))
                             .foregroundColor(Color(white: 0.5))
-                        Text(formatPrice(perPerson))
-                            .font(.system(size: 24, weight: .bold, design: .monospaced))
-                            .foregroundColor(.white)
+                        CurrencyText(
+                            perPerson,
+                            currency: viewModel.receipt.effectiveCurrency,
+                            font: .system(size: 24, weight: .bold, design: .monospaced),
+                            amountWeight: .bold,
+                            codeWeight: .light
+                        )
+                        .foregroundColor(.white)
                     }
 
                     Spacer()
@@ -73,9 +78,14 @@ struct SplitMethodControlsView: View {
                         Text("Bill Total")
                             .font(.system(size: 9, design: .monospaced))
                             .foregroundColor(Color(white: 0.4))
-                        Text(formatPrice(viewModel.receipt.total))
-                            .font(.system(.body, design: .monospaced))
-                            .foregroundColor(.white)
+                        CurrencyText(
+                            viewModel.receipt.total,
+                            currency: viewModel.receipt.effectiveCurrency,
+                            font: .system(.body, design: .monospaced),
+                            amountWeight: .regular,
+                            codeWeight: .light
+                        )
+                        .foregroundColor(.white)
                     }
                 }
                 .padding(.vertical, 14)
@@ -148,9 +158,14 @@ struct SplitMethodControlsView: View {
 
                 Spacer()
 
-                Text(formatPrice(item.price))
-                    .font(.system(.body, design: .monospaced))
-                    .foregroundColor(.white)
+                CurrencyText(
+                    item.price,
+                    currency: item.originalCurrency ?? viewModel.receipt.effectiveCurrency,
+                    font: .system(.body, design: .monospaced),
+                    amountWeight: .regular,
+                    codeWeight: .light
+                )
+                .foregroundColor(.white)
             }
             .padding(.vertical, 12)
             .contentShape(Rectangle())
@@ -391,16 +406,48 @@ struct SplitMethodControlsView: View {
 
             // Balance tracker
             let remaining = viewModel.exactRemainingBalance
+            let currency = viewModel.receipt.effectiveCurrency
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Total Allocated: \(formatPrice(viewModel.totalAssignedExact)) / \(formatPrice(viewModel.receipt.total))")
-                        .font(.system(size: 10, design: .monospaced))
+                    HStack(spacing: 4) {
+                        Text("Total Allocated:")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(Color(white: 0.6))
+                        CurrencyText(
+                            viewModel.totalAssignedExact,
+                            currency: currency,
+                            font: .system(size: 10, design: .monospaced),
+                            amountWeight: .regular,
+                            codeWeight: .light
+                        )
                         .foregroundColor(Color(white: 0.6))
+                        Text("/")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(Color(white: 0.6))
+                        CurrencyText(
+                            viewModel.receipt.total,
+                            currency: currency,
+                            font: .system(size: 10, design: .monospaced),
+                            amountWeight: .regular,
+                            codeWeight: .light
+                        )
+                        .foregroundColor(Color(white: 0.6))
+                    }
 
                     if abs(remaining) > 0.01 {
-                        Text(remaining > 0 ? "Remaining to allocate: \(formatPrice(remaining))" : "Over-allocated by: \(formatPrice(-remaining))")
-                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        HStack(spacing: 4) {
+                            Text(remaining > 0 ? "Remaining to allocate:" : "Over-allocated by:")
+                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                .foregroundColor(remaining > 0 ? Color(white: 0.8) : Color.white)
+                            CurrencyText(
+                                abs(remaining),
+                                currency: currency,
+                                font: .system(size: 9, weight: .bold, design: .monospaced),
+                                amountWeight: .bold,
+                                codeWeight: .light
+                            )
                             .foregroundColor(remaining > 0 ? Color(white: 0.8) : Color.white)
+                        }
                     } else {
                         Text("Fully allocated (100%)")
                             .font(.system(size: 9, weight: .bold, design: .monospaced))
@@ -430,6 +477,7 @@ struct SplitMethodControlsView: View {
     @ViewBuilder
     private func exactParticipantRow(_ participant: Participant) -> some View {
         let currentAmount = viewModel.exactAllocations[participant.id] ?? (viewModel.receipt.total / Double(max(1, viewModel.participants.count)))
+        let currency = viewModel.receipt.effectiveCurrency
 
         HStack {
             HStack(spacing: 8) {
@@ -450,7 +498,7 @@ struct SplitMethodControlsView: View {
 
             HStack(spacing: 6) {
                 Button(action: { viewModel.setExactAmount(for: participant.id, amount: max(0, currentAmount - 5.0)) }) {
-                    Text("-$5")
+                    Text("-5")
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundColor(.white)
                         .frame(width: 32, height: 26)
@@ -459,13 +507,18 @@ struct SplitMethodControlsView: View {
                 }
                 .buttonStyle(.plain)
 
-                Text(formatPrice(currentAmount))
-                    .font(.system(size: 12, weight: .bold, design: .monospaced))
-                    .foregroundColor(.white)
-                    .frame(width: 60, alignment: .center)
+                CurrencyText(
+                    currentAmount,
+                    currency: currency,
+                    font: .system(size: 12, weight: .bold, design: .monospaced),
+                    amountWeight: .bold,
+                    codeWeight: .light
+                )
+                .foregroundColor(.white)
+                .frame(width: 75, alignment: .center)
 
                 Button(action: { viewModel.setExactAmount(for: participant.id, amount: currentAmount + 5.0) }) {
-                    Text("+$5")
+                    Text("+5")
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundColor(.white)
                         .frame(width: 32, height: 26)
@@ -485,9 +538,5 @@ struct SplitMethodControlsView: View {
         Rectangle()
             .fill(Color(white: 0.2))
             .frame(height: 0.5)
-    }
-
-    private func formatPrice(_ value: Double) -> String {
-        String(format: "$%.2f", value)
     }
 }

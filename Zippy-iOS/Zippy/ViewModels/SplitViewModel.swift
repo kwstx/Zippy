@@ -241,6 +241,7 @@ final class SplitViewModel: ObservableObject {
     // MARK: - Instant Synchronous Calculation
 
     func recalculate() {
+        let currency = receipt.effectiveCurrency
         let result = SplitCalculator.calculate(
             method: selectedSplitMethod,
             items: receipt.items,
@@ -252,28 +253,23 @@ final class SplitViewModel: ObservableObject {
             subtotal: receipt.subtotal,
             tax: receipt.tax,
             tip: receipt.tip,
-            total: receipt.total
+            total: receipt.total,
+            currency: currency,
+            targetCurrency: receipt.targetCurrency ?? "USD",
+            exchangeRate: receipt.exchangeRate ?? 1.0
         )
         splitResult = result
-        simplifiedPayments = SplitCalculator.simplify(balances: result.balances)
     }
 
     /// Fetches authoritative simplified payments computed by the Vapor backend.
     func fetchSimplifiedPayments() async {
-        guard let token = shareableURL?.components(separatedBy: "/s/").last, !token.isEmpty else {
-            if let balances = splitResult?.balances {
-                simplifiedPayments = SplitCalculator.simplify(balances: balances)
-            }
-            return
-        }
+        guard let token = shareableURL?.components(separatedBy: "/s/").last, !token.isEmpty else { return }
 
         do {
             let response = try await ReceiptService.getSimplifiedPayments(token: token)
             simplifiedPayments = response.transfers
         } catch {
-            if let balances = splitResult?.balances {
-                simplifiedPayments = SplitCalculator.simplify(balances: balances)
-            }
+            // Silently ignore
         }
     }
 
@@ -328,7 +324,9 @@ final class SplitViewModel: ObservableObject {
                         assignments: wireAssignments,
                         percentageAllocations: wirePercentages,
                         shareAllocations: wireShares,
-                        exactAllocations: wireExact
+                        exactAllocations: wireExact,
+                        currency: receipt.effectiveCurrency,
+                        targetCurrency: receipt.targetCurrency ?? "USD"
                     )
                 } else if let receiptId = receipt.id {
                     response = try await ReceiptService.finalizeSplit(
@@ -339,7 +337,9 @@ final class SplitViewModel: ObservableObject {
                         percentageAllocations: wirePercentages,
                         shareAllocations: wireShares,
                         exactAllocations: wireExact,
-                        category: selectedCategory?.rawValue
+                        category: selectedCategory?.rawValue,
+                        currency: receipt.effectiveCurrency,
+                        targetCurrency: receipt.targetCurrency ?? "USD"
                     )
                 } else {
                     return
@@ -348,7 +348,8 @@ final class SplitViewModel: ObservableObject {
                 // In-place refresh of monochrome totals
                 self.splitResult = SplitResult(
                     balances: response.appBalances,
-                    assignedSubtotal: splitResult?.assignedSubtotal ?? receipt.subtotal
+                    assignedSubtotal: splitResult?.assignedSubtotal ?? receipt.subtotal,
+                    currency: response.currency ?? receipt.effectiveCurrency
                 )
                 if response.shareableURL != nil {
                     self.shareableURL = response.shareableURL
@@ -380,13 +381,16 @@ final class SplitViewModel: ObservableObject {
                 percentageAllocations: wirePercentages,
                 shareAllocations: wireShares,
                 exactAllocations: wireExact,
-                category: selectedCategory?.rawValue
+                category: selectedCategory?.rawValue,
+                currency: receipt.effectiveCurrency,
+                targetCurrency: receipt.targetCurrency ?? "USD"
             )
 
             // Update with authoritative server-computed balances
             self.splitResult = SplitResult(
                 balances: response.appBalances,
-                assignedSubtotal: splitResult?.assignedSubtotal ?? receipt.subtotal
+                assignedSubtotal: splitResult?.assignedSubtotal ?? receipt.subtotal,
+                currency: response.currency ?? receipt.effectiveCurrency
             )
             self.shareableURL = response.shareableURL
             if let cat = response.category {

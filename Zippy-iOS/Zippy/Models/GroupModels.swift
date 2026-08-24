@@ -9,13 +9,14 @@ struct PersistentGroup: Identifiable, Codable, Equatable, Hashable {
     var members: [Participant]
     var runningBalance: Double
     var formattedBalance: String
+    var currency: String
     var memberCount: Int
     var eventCount: Int
     var lastActivity: Date?
     var createdAt: Date?
 
     enum CodingKeys: String, CodingKey {
-        case id, name, members, runningBalance, formattedBalance, memberCount, eventCount, lastActivity, createdAt
+        case id, name, members, runningBalance, formattedBalance, currency, memberCount, eventCount, lastActivity, createdAt
     }
 
     init(
@@ -23,7 +24,8 @@ struct PersistentGroup: Identifiable, Codable, Equatable, Hashable {
         name: String,
         members: [Participant] = [],
         runningBalance: Double = 0.0,
-        formattedBalance: String = "$0.00",
+        formattedBalance: String = "0.00 USD",
+        currency: String = "USD",
         memberCount: Int = 0,
         eventCount: Int = 0,
         lastActivity: Date? = nil,
@@ -34,10 +36,26 @@ struct PersistentGroup: Identifiable, Codable, Equatable, Hashable {
         self.members = members
         self.runningBalance = runningBalance
         self.formattedBalance = formattedBalance
+        self.currency = currency
         self.memberCount = memberCount.max(members.count)
         self.eventCount = eventCount
         self.lastActivity = lastActivity
         self.createdAt = createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        members = try container.decode([Participant].self, forKey: .members)
+        runningBalance = try container.decode(Double.self, forKey: .runningBalance)
+        formattedBalance = try container.decode(String.self, forKey: .formattedBalance)
+        currency = try container.decodeIfPresent(String.self, forKey: .currency) ?? "USD"
+        let count = try container.decode(Int.self, forKey: .memberCount)
+        memberCount = count.max(members.count)
+        eventCount = try container.decode(Int.self, forKey: .eventCount)
+        lastActivity = try container.decodeIfPresent(Date.self, forKey: .lastActivity)
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt)
     }
 }
 
@@ -59,6 +77,22 @@ struct LedgerSplit: Identifiable, Codable, Equatable {
     let memberId: UUID
     let memberName: String
     let amount: Double
+    var currency: String
+    var convertedAmount: Double?
+
+    init(
+        memberId: UUID,
+        memberName: String,
+        amount: Double,
+        currency: String = "USD",
+        convertedAmount: Double? = nil
+    ) {
+        self.memberId = memberId
+        self.memberName = memberName
+        self.amount = amount
+        self.currency = currency
+        self.convertedAmount = convertedAmount ?? amount
+    }
 }
 
 /// An immutable event in the group's append-only ledger event stream.
@@ -68,6 +102,10 @@ struct LedgerEvent: Identifiable, Codable, Equatable {
     let eventType: String
     let title: String
     let amount: Double
+    var currency: String?
+    var convertedAmount: Double?
+    var targetCurrency: String?
+    var exchangeRate: Double?
     let payerId: UUID
     let payerName: String
     let payeeId: UUID?
@@ -77,6 +115,10 @@ struct LedgerEvent: Identifiable, Codable, Equatable {
     let receiptId: UUID?
     let note: String?
     let createdAt: Date?
+
+    var effectiveCurrency: String {
+        currency ?? "USD"
+    }
 
     var isSettlement: Bool {
         eventType.lowercased() == "settlement"
@@ -94,6 +136,34 @@ struct GroupMemberBalance: Identifiable, Codable, Equatable {
     let name: String
     let netBalance: Double
     let formattedBalance: String
+    var currency: String = "USD"
+
+    init(
+        participantId: UUID,
+        name: String,
+        netBalance: Double,
+        formattedBalance: String,
+        currency: String = "USD"
+    ) {
+        self.participantId = participantId
+        self.name = name
+        self.netBalance = netBalance
+        self.formattedBalance = formattedBalance
+        self.currency = currency
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        participantId = try container.decode(UUID.self, forKey: .participantId)
+        name = try container.decode(String.self, forKey: .name)
+        netBalance = try container.decode(Double.self, forKey: .netBalance)
+        formattedBalance = try container.decode(String.self, forKey: .formattedBalance)
+        currency = try container.decodeIfPresent(String.self, forKey: .currency) ?? "USD"
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case participantId, name, netBalance, formattedBalance, currency
+    }
 }
 
 /// Full response when loading a group's history and append-only event stream from the backend,
@@ -103,6 +173,7 @@ struct GroupLedgerHistoryResponse: Codable {
     let events: [LedgerEvent]
     let memberBalances: [GroupMemberBalance]
     let currentBalances: [String: Double]?
+    let currency: String?
     let simplifiedTransfers: [SimplifiedPayment]?
     let simplifiedLines: [String]?
     let totalTransferred: Double?
@@ -112,6 +183,7 @@ struct GroupLedgerHistoryResponse: Codable {
 struct CreateGroupPayload: Encodable {
     let name: String
     let members: [ParticipantPayload]
+    let currency: String?
 
     struct ParticipantPayload: Encodable {
         let id: UUID
@@ -123,6 +195,8 @@ struct CreateGroupPayload: Encodable {
 struct AddGroupExpensePayload: Encodable {
     let title: String
     let amount: Double
+    let currency: String?
+    let targetCurrency: String?
     let payerId: UUID
     let splitMemberIds: [UUID]?
     let splits: [LedgerSplitPayload]?
@@ -133,6 +207,7 @@ struct AddGroupExpensePayload: Encodable {
         let memberId: UUID
         let memberName: String
         let amount: Double
+        let currency: String?
     }
 }
 
@@ -141,5 +216,7 @@ struct AddGroupSettlementPayload: Encodable {
     let payerId: UUID
     let payeeId: UUID
     let amount: Double
+    let currency: String?
+    let targetCurrency: String?
     let note: String?
 }

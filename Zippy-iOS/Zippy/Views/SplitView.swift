@@ -99,7 +99,10 @@ struct SplitView: View {
             )
         }
         .sheet(isPresented: $showingSimplifiedPayments) {
-            SimplifiedPaymentsView(transfers: viewModel.simplifiedPayments)
+            SimplifiedPaymentsView(
+                transfers: viewModel.simplifiedPayments,
+                currency: viewModel.receipt.effectiveCurrency
+            )
         }
         .alert("Add Person", isPresented: $showingAddParticipant) {
             TextField("Name", text: $newParticipantName)
@@ -146,41 +149,35 @@ struct SplitView: View {
                         )
                     }
                 }
+                .padding(.vertical, 4)
             }
-            .padding(.bottom, 14)
         }
+        .padding(.bottom, 12)
     }
 
     @ViewBuilder
     private func participantChip(_ participant: Participant) -> some View {
-        HStack(spacing: 6) {
-            Text(participant.initial)
-                .font(.system(.caption2, design: .monospaced))
-                .fontWeight(.bold)
-                .foregroundColor(.black)
-                .frame(width: 22, height: 22)
-                .background(Color.white)
-                .clipShape(Circle())
-
+        HStack(spacing: 8) {
             Text(participant.name)
-                .font(.system(.caption, design: .monospaced))
+                .font(.system(.body, design: .monospaced))
                 .foregroundColor(.white)
 
             Button(action: { viewModel.removeParticipant(id: participant.id) }) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundColor(Color(white: 0.4))
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundColor(Color(white: 0.5))
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(white: 0.1))
         .overlay(
             RoundedRectangle(cornerRadius: 0)
-                .stroke(Color(white: 0.3), lineWidth: 0.5)
+                .stroke(Color(white: 0.25), lineWidth: 0.5)
         )
     }
 
-    // MARK: - Summary Rows
+    // MARK: - Summary
 
     @ViewBuilder
     private func summaryRow(label: String, amount: Double, isBold: Bool = false) -> some View {
@@ -190,41 +187,31 @@ struct SplitView: View {
                 .fontWeight(isBold ? .bold : .regular)
                 .foregroundColor(isBold ? .white : Color(white: 0.7))
             Spacer()
-            Text(formatPrice(amount))
-                .font(.system(.body, design: .monospaced))
-                .fontWeight(isBold ? .bold : .regular)
-                .foregroundColor(isBold ? .white : Color(white: 0.7))
+            CurrencyText(
+                amount,
+                currency: viewModel.receipt.effectiveCurrency,
+                font: .system(.body, design: .monospaced),
+                amountWeight: isBold ? .bold : .regular,
+                codeWeight: .light
+            )
+            .foregroundColor(isBold ? .white : Color(white: 0.7))
         }
-        .padding(.vertical, 12)
+        .padding(.vertical, isBold ? 14 : 10)
     }
 
-    // MARK: - Balances (Monochrome Totals In Place)
+    // MARK: - Balances Section
 
     @ViewBuilder
     private func balancesSection(result: SplitResult) -> some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("WHO OWES WHAT")
-                    .font(.system(.caption2, design: .monospaced))
-                    .foregroundColor(Color(white: 0.4))
-                Spacer()
-                if viewModel.isSyncingWithBackend {
-                    Text("SYNCING...")
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        .foregroundColor(Color(white: 0.5))
-                } else {
-                    Text("Tap person to pay / settle")
-                        .font(.system(size: 9, design: .monospaced))
-                        .foregroundColor(Color(white: 0.4))
-                }
-            }
-            .padding(.vertical, 14)
+        VStack(alignment: .leading, spacing: 0) {
+            Text("WHO OWES WHAT")
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundColor(Color(white: 0.4))
+                .padding(.top, 16)
+                .padding(.bottom, 8)
 
-            thinDivider()
-
-            ForEach(result.balances) { balance in
-                VStack(spacing: 0) {
-                    // Clickable Person Header
+            VStack(spacing: 0) {
+                ForEach(result.balances) { balance in
                     Button(action: {
                         withAnimation(.easeInOut(duration: 0.2)) {
                             if expandedParticipantId == balance.participantId {
@@ -265,21 +252,25 @@ struct SplitView: View {
                     .buttonStyle(.plain)
 
                     // Breakdown
-                    balanceRow(label: "Items", amount: balance.itemsSubtotal)
-                    balanceRow(label: "Tax", amount: balance.taxShare)
-                    balanceRow(label: "Tip", amount: balance.tipShare)
+                    balanceRow(label: "Items", amount: balance.itemsSubtotal, currency: balance.currency)
+                    balanceRow(label: "Tax", amount: balance.taxShare, currency: balance.currency)
+                    balanceRow(label: "Tip", amount: balance.tipShare, currency: balance.currency)
 
-                    // Person total (Monochrome high-contrast display)
+                    // Person total (Monochrome high-contrast display with lighter weight currency)
                     HStack {
                         Text("Total")
                             .font(.system(.body, design: .monospaced))
                             .fontWeight(.bold)
                             .foregroundColor(.white)
                         Spacer()
-                        Text(formatPrice(balance.total))
-                            .font(.system(.body, design: .monospaced))
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
+                        CurrencyText(
+                            balance.total,
+                            currency: balance.currency,
+                            font: .system(.body, design: .monospaced),
+                            amountWeight: .bold,
+                            codeWeight: .light
+                        )
+                        .foregroundColor(.white)
                     }
                     .padding(.vertical, 8)
 
@@ -289,6 +280,7 @@ struct SplitView: View {
                             participantId: balance.participantId,
                             participantName: balance.name,
                             amount: balance.total,
+                            currency: balance.currency,
                             token: viewModel.shareableURL?.components(separatedBy: "/s/").last,
                             settlementStatus: balance.settlementStatus,
                             selectedMethod: balance.paymentMethod,
@@ -338,15 +330,20 @@ struct SplitView: View {
     }
 
     @ViewBuilder
-    private func balanceRow(label: String, amount: Double) -> some View {
+    private func balanceRow(label: String, amount: Double, currency: String) -> some View {
         HStack {
             Text(label)
                 .font(.system(.caption, design: .monospaced))
                 .foregroundColor(Color(white: 0.5))
             Spacer()
-            Text(formatPrice(amount))
-                .font(.system(.caption, design: .monospaced))
-                .foregroundColor(Color(white: 0.5))
+            CurrencyText(
+                amount,
+                currency: currency,
+                font: .system(.caption, design: .monospaced),
+                amountWeight: .regular,
+                codeWeight: .light
+            )
+            .foregroundColor(Color(white: 0.5))
         }
         .padding(.vertical, 4)
         .padding(.leading, 16)
@@ -359,66 +356,80 @@ struct SplitView: View {
         VStack(spacing: 12) {
             if viewModel.isFinalizing {
                 ProgressView()
-                    .progressViewStyle(.circular)
                     .tint(.white)
-                    .padding(.vertical, 20)
+                    .padding(.vertical, 16)
             } else if let url = viewModel.shareableURL {
-                VStack(spacing: 16) {
-                    Text(url)
-                        .font(.system(.body, design: .monospaced))
-                        .foregroundColor(.black)
-                        .multilineTextAlignment(.center)
-                        .textSelection(.enabled)
+                VStack(spacing: 8) {
+                    Text("SHAREABLE LINK")
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundColor(Color(white: 0.4))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 14)
 
-                    Button(action: {
-                        UIPasteboard.general.string = url
-                        isLinkCopied = true
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                            isLinkCopied = false
+                    HStack {
+                        Text(url)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundColor(.white)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+
+                        Spacer()
+
+                        Button(action: {
+                            UIPasteboard.general.string = url
+                            isLinkCopied = true
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                isLinkCopied = false
+                            }
+                        }) {
+                            Text(isLinkCopied ? "Copied" : "Copy")
+                                .font(.system(.caption, design: .monospaced))
+                                .fontWeight(.bold)
+                                .foregroundColor(.black)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Color.white)
                         }
-                    }) {
-                        Text(isLinkCopied ? "Copied" : "Copy")
-                            .font(.system(.body, design: .monospaced))
-                            .fontWeight(.medium)
-                            .foregroundColor(.black)
-                            .padding(.horizontal, 24)
-                            .padding(.vertical, 8)
-                            .overlay(
-                                Rectangle()
-                                    .stroke(Color.black, lineWidth: 0.5)
-                            )
                     }
+                    .padding(12)
+                    .background(Color(white: 0.1))
+                    .overlay(
+                        Rectangle().stroke(Color(white: 0.3), lineWidth: 0.5)
+                    )
                 }
-                .padding(.vertical, 24)
-                .padding(.horizontal, 16)
-                .frame(maxWidth: .infinity)
-                .background(Color.white)
-                .padding(.vertical, 20)
             } else {
                 Button(action: {
-                    Task { await viewModel.finalize() }
+                    Task {
+                        await viewModel.finalize()
+                    }
                 }) {
-                    Text("Finalize & Share")
-                        .font(.system(.body, design: .monospaced))
-                        .fontWeight(.medium)
-                        .foregroundColor(.black)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(Color.white)
+                    HStack {
+                        Image(systemName: "link")
+                            .font(.system(.body, design: .monospaced))
+                        Text("Finalize & Get Share Link")
+                            .font(.system(.body, design: .monospaced))
+                            .fontWeight(.medium)
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 0)
+                            .stroke(Color(white: 0.3), lineWidth: 0.5)
+                    )
                 }
-                .padding(.vertical, 20)
+                .padding(.top, 16)
             }
 
             if let error = viewModel.errorMessage {
                 Text(error)
                     .font(.system(.caption, design: .monospaced))
-                    .foregroundColor(.red)
-                    .padding(.bottom, 12)
+                    .foregroundColor(Color(white: 0.7))
+                    .padding(.top, 4)
             }
         }
+        .padding(.bottom, 24)
     }
-
-    // MARK: - Helpers
 
     @ViewBuilder
     private func thinDivider() -> some View {
@@ -426,14 +437,4 @@ struct SplitView: View {
             .fill(Color(white: 0.2))
             .frame(height: 0.5)
     }
-
-    private func formatPrice(_ value: Double) -> String {
-        String(format: "$%.2f", value)
-    }
-}
-
-// MARK: - Make Int work with sheet(item:)
-
-extension Int: @retroactive Identifiable {
-    public var id: Int { self }
 }

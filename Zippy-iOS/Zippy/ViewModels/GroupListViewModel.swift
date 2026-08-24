@@ -26,7 +26,7 @@ final class GroupListViewModel: ObservableObject {
         }
     }
 
-    func createGroup(name: String, members: [Participant]) async -> Bool {
+    func createGroup(name: String, members: [Participant], currency: String = "USD") async -> Bool {
         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             self.errorMessage = "Group name is required."
             return false
@@ -36,7 +36,7 @@ final class GroupListViewModel: ObservableObject {
         errorMessage = nil
 
         do {
-            let newGroup = try await GroupService.createGroup(name: name, members: members)
+            let newGroup = try await GroupService.createGroup(name: name, members: members, currency: currency)
             self.groups.insert(newGroup, at: 0)
             self.isCreatingGroup = false
             return true

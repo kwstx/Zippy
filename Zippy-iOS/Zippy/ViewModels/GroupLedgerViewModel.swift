@@ -17,6 +17,10 @@ final class GroupLedgerViewModel: ObservableObject {
     @Published var isSubmitting: Bool = false
     @Published var errorMessage: String? = nil
 
+    var groupCurrency: String {
+        group?.currency ?? "USD"
+    }
+
     init(groupId: UUID, initialGroup: PersistentGroup? = nil) {
         self.groupId = groupId
         self.group = initialGroup
@@ -66,20 +70,28 @@ final class GroupLedgerViewModel: ObservableObject {
     func addExpense(
         title: String,
         amount: Double,
+        currency: String? = nil,
         payerId: UUID,
         splitMemberIds: [UUID]? = nil,
+        splits: [AddGroupExpensePayload.LedgerSplitPayload]? = nil,
         note: String? = nil
     ) async -> Bool {
         isSubmitting = true
         errorMessage = nil
+
+        let targetCur = groupCurrency
+        let expCurrency = currency ?? targetCur
 
         do {
             _ = try await GroupService.addExpense(
                 groupId: groupId,
                 title: title,
                 amount: amount,
+                currency: expCurrency,
+                targetCurrency: targetCur,
                 payerId: payerId,
                 splitMemberIds: splitMemberIds,
+                splits: splits,
                 note: note
             )
             // Reload full ledger stream to update balances, snapshots, and simplified transfers
@@ -111,10 +123,14 @@ final class GroupLedgerViewModel: ObservableObject {
         payerId: UUID,
         payeeId: UUID,
         amount: Double,
+        currency: String? = nil,
         note: String? = nil
     ) async -> Bool {
         isSubmitting = true
         errorMessage = nil
+
+        let targetCur = groupCurrency
+        let setCurrency = currency ?? targetCur
 
         do {
             _ = try await GroupService.addSettlement(
@@ -122,6 +138,8 @@ final class GroupLedgerViewModel: ObservableObject {
                 payerId: payerId,
                 payeeId: payeeId,
                 amount: amount,
+                currency: setCurrency,
+                targetCurrency: targetCur,
                 note: note
             )
             // Reload full ledger stream to update balances, snapshots, and simplified transfers
