@@ -604,15 +604,35 @@ enum GuestViewRenderer {
                     transform: translateX(-50%) translateY(0);
                     opacity: 1;
                 }
-                /* Footer */
+                /* Footer & Viral Loop */
                 .footer {
-                    margin-top: 40px;
+                    margin-top: 48px;
+                    padding-top: 24px;
+                    border-top: 1px solid var(--border);
                     text-align: center;
                     font-family: var(--font-mono);
                     font-size: 11px;
-                    color: var(--text-muted);
+                    color: var(--text-secondary);
                     letter-spacing: 0.05em;
+                }
+                .footer-invite-link {
+                    color: var(--text);
+                    text-decoration: underline;
+                    text-underline-offset: 3px;
+                    font-weight: 700;
                     text-transform: uppercase;
+                    transition: opacity 0.15s ease;
+                }
+                .footer-invite-link:hover {
+                    opacity: 0.7;
+                }
+                .footer-tagline {
+                    display: block;
+                    margin-top: 6px;
+                    color: var(--text-muted);
+                    font-size: 10px;
+                    text-transform: uppercase;
+                    letter-spacing: 0.06em;
                 }
             </style>
         </head>
@@ -803,9 +823,10 @@ enum GuestViewRenderer {
                     </div>
                 </div>
 
-                <!-- Footer -->
+                <!-- Viral Loop Footer: Discreet "Made with Zippy" with black text invite link -->
                 <div class="footer">
-                    No App Required · Instant Settlement · Zippy
+                    <span>Made with </span><a href="\(baseURL)" class="footer-invite-link" target="_blank" rel="noopener noreferrer">Zippy</a>
+                    <span class="footer-tagline">Split bills instantly · No app required</span>
                 </div>
             </div>
 
@@ -1360,12 +1381,13 @@ enum GuestViewRenderer {
     }
 
     /// Renders a stark white screen displaying the reduced list of black text lines titled "Simplified payments".
-    public static func renderSimplifiedPayments(lines: [String], title: String = "Simplified payments", backURL: String? = nil) -> String {
+    public static func renderSimplifiedPayments(lines: [String], title: String = "Simplified payments", backURL: String? = nil, baseURL: String? = nil) -> String {
         let linesHTML = lines.map { line in
             "<li class=\"payment-line\">\(escapeHTML(line))</li>"
         }.joined(separator: "\n")
 
         let backLinkHTML = backURL != nil ? "<a href=\"\(backURL!)\" class=\"back-link\">← Back to bill</a>" : ""
+        let appLandingURL = baseURL ?? "/"
 
         return """
         <!DOCTYPE html>
@@ -1388,7 +1410,7 @@ enum GuestViewRenderer {
                     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Mono", Menlo, Monaco, Consolas, "Segoe UI", Roboto, sans-serif;
                     line-height: 1.6;
                     min-height: 100vh;
-                    padding: 48px 24px;
+                    padding: 48px 24px 64px 24px;
                 }
                 .container {
                     max-width: 480px;
@@ -1419,7 +1441,7 @@ enum GuestViewRenderer {
                 }
                 .back-link {
                     display: inline-block;
-                    margin-top: 40px;
+                    margin-top: 32px;
                     font-family: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
                     font-size: 13px;
                     color: #000000;
@@ -1430,6 +1452,36 @@ enum GuestViewRenderer {
                 .back-link:hover {
                     opacity: 0.7;
                 }
+                /* Footer & Viral Loop */
+                .footer {
+                    margin-top: 48px;
+                    padding-top: 24px;
+                    border-top: 1px solid #EAEAEA;
+                    text-align: center;
+                    font-family: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+                    font-size: 11px;
+                    color: #6B6B6B;
+                    letter-spacing: 0.05em;
+                }
+                .footer-invite-link {
+                    color: #000000;
+                    text-decoration: underline;
+                    text-underline-offset: 3px;
+                    font-weight: 700;
+                    text-transform: uppercase;
+                    transition: opacity 0.15s ease;
+                }
+                .footer-invite-link:hover {
+                    opacity: 0.7;
+                }
+                .footer-tagline {
+                    display: block;
+                    margin-top: 6px;
+                    color: #8E8E8E;
+                    font-size: 10px;
+                    text-transform: uppercase;
+                    letter-spacing: 0.06em;
+                }
             </style>
         </head>
         <body>
@@ -1439,6 +1491,12 @@ enum GuestViewRenderer {
                     \(linesHTML)
                 </ul>
                 \(backLinkHTML)
+
+                <!-- Viral Loop Footer -->
+                <div class="footer">
+                    <span>Made with </span><a href="\(appLandingURL)" class="footer-invite-link" target="_blank" rel="noopener noreferrer">Zippy</a>
+                    <span class="footer-tagline">Split bills instantly · No app required</span>
+                </div>
             </div>
         </body>
         </html>

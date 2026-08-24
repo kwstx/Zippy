@@ -527,10 +527,12 @@ struct SplitController {
         }
 
         // Render minimalist white screen titled "Simplified payments" with reduced black text lines
+        let baseURL = Environment.get("BASE_URL") ?? "http://localhost:8080"
         let html = GuestViewRenderer.renderSimplifiedPayments(
             lines: simplified.lines,
             title: "Simplified payments",
-            backURL: "/s/\(token)"
+            backURL: "/s/\(token)",
+            baseURL: baseURL
         )
 
         var headers = HTTPHeaders()
@@ -547,10 +549,12 @@ struct SplitController {
             "David pays Alice $12.25"
         ]
 
+        let baseURL = Environment.get("BASE_URL") ?? "http://localhost:8080"
         let html = GuestViewRenderer.renderSimplifiedPayments(
             lines: sampleLines,
             title: "Simplified payments",
-            backURL: nil
+            backURL: nil,
+            baseURL: baseURL
         )
 
         var headers = HTTPHeaders()
