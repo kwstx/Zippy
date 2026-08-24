@@ -10,6 +10,9 @@ final class GroupLedgerViewModel: ObservableObject {
     @Published var group: PersistentGroup?
     @Published var events: [LedgerEvent] = []
     @Published var memberBalances: [GroupMemberBalance] = []
+    @Published var simplifiedTransfers: [SimplifiedPayment] = []
+    @Published var simplifiedLines: [String] = []
+    @Published var totalTransferred: Double = 0.0
     @Published var isLoading: Bool = false
     @Published var isSubmitting: Bool = false
     @Published var errorMessage: String? = nil
@@ -29,11 +32,34 @@ final class GroupLedgerViewModel: ObservableObject {
                 self.group = response.group
                 self.events = response.events
                 self.memberBalances = response.memberBalances
+                if let transfers = response.simplifiedTransfers {
+                    self.simplifiedTransfers = transfers
+                }
+                if let lines = response.simplifiedLines {
+                    self.simplifiedLines = lines
+                } else if let transfers = response.simplifiedTransfers {
+                    self.simplifiedLines = transfers.isEmpty
+                        ? ["All balances are settled. No transfers needed."]
+                        : transfers.map { $0.formattedText }
+                }
+                self.totalTransferred = response.totalTransferred ?? 0.0
                 self.isLoading = false
             } catch {
                 self.errorMessage = "Failed to load ledger history: \(error.localizedDescription)"
                 self.isLoading = false
             }
+        }
+    }
+
+    /// Fetches the latest simplified payments calculated by the server's graph algorithm.
+    func fetchSimplifiedPayments() async {
+        do {
+            let response = try await GroupService.fetchSimplifiedPayments(groupId: groupId)
+            self.simplifiedTransfers = response.transfers
+            self.simplifiedLines = response.lines
+            self.totalTransferred = response.totalTransferred
+        } catch {
+            // Silently fallback if history is already loaded
         }
     }
 
@@ -56,11 +82,22 @@ final class GroupLedgerViewModel: ObservableObject {
                 splitMemberIds: splitMemberIds,
                 note: note
             )
-            // Reload full ledger stream to update balances and snapshots
+            // Reload full ledger stream to update balances, snapshots, and simplified transfers
             let response = try await GroupService.fetchGroupHistory(groupId: groupId)
             self.group = response.group
             self.events = response.events
             self.memberBalances = response.memberBalances
+            if let transfers = response.simplifiedTransfers {
+                self.simplifiedTransfers = transfers
+            }
+            if let lines = response.simplifiedLines {
+                self.simplifiedLines = lines
+            } else if let transfers = response.simplifiedTransfers {
+                self.simplifiedLines = transfers.isEmpty
+                    ? ["All balances are settled. No transfers needed."]
+                    : transfers.map { $0.formattedText }
+            }
+            self.totalTransferred = response.totalTransferred ?? 0.0
             self.isSubmitting = false
             return true
         } catch {
@@ -87,11 +124,22 @@ final class GroupLedgerViewModel: ObservableObject {
                 amount: amount,
                 note: note
             )
-            // Reload full ledger stream to update balances and snapshots
+            // Reload full ledger stream to update balances, snapshots, and simplified transfers
             let response = try await GroupService.fetchGroupHistory(groupId: groupId)
             self.group = response.group
             self.events = response.events
             self.memberBalances = response.memberBalances
+            if let transfers = response.simplifiedTransfers {
+                self.simplifiedTransfers = transfers
+            }
+            if let lines = response.simplifiedLines {
+                self.simplifiedLines = lines
+            } else if let transfers = response.simplifiedTransfers {
+                self.simplifiedLines = transfers.isEmpty
+                    ? ["All balances are settled. No transfers needed."]
+                    : transfers.map { $0.formattedText }
+            }
+            self.totalTransferred = response.totalTransferred ?? 0.0
             self.isSubmitting = false
             return true
         } catch {

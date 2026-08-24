@@ -24,7 +24,8 @@ public enum GroupLedgerService {
     }
 
     /// Replays the append-only event stream in strict chronological order and calculates
-    /// the authoritative running balances for all members and event snapshots.
+    /// the authoritative running balances for all members and event snapshots,
+    /// continuously simplifying debts across all expenses using the pure-Swift graph algorithm.
     public static func computeLedgerState(
         members: [ParticipantDTO],
         events: [LedgerEvent]
@@ -32,7 +33,10 @@ public enum GroupLedgerService {
         currentBalances: [UUID: Double],
         memberBalancesDTO: [GroupMemberBalanceDTO],
         eventResponses: [LedgerEventResponseDTO],
-        primaryRunningBalance: Double
+        primaryRunningBalance: Double,
+        simplifiedTransfers: [SimplifiedPaymentDTO],
+        simplifiedLines: [String],
+        totalTransferred: Double
     ) {
         // Initialize all member balances to zero
         var runningBalances: [UUID: Double] = [:]
@@ -149,11 +153,20 @@ public enum GroupLedgerService {
             primaryBalance = memberDTOs.first?.netBalance ?? 0.0
         }
 
+        // Continuous debt simplification across all expenses using the pure-Swift graph algorithm
+        let simplified = MinimumCashFlowCalculator.simplifyGroupBalances(
+            members: members,
+            netBalances: runningBalances
+        )
+
         return (
             currentBalances: runningBalances,
             memberBalancesDTO: memberDTOs,
             eventResponses: eventResponses,
-            primaryRunningBalance: primaryBalance
+            primaryRunningBalance: primaryBalance,
+            simplifiedTransfers: simplified.transfers,
+            simplifiedLines: simplified.lines,
+            totalTransferred: simplified.totalTransferred
         )
     }
 }

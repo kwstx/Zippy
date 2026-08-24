@@ -96,12 +96,16 @@ struct GroupMemberBalance: Identifiable, Codable, Equatable {
     let formattedBalance: String
 }
 
-/// Full response when loading a group's history and append-only event stream from the backend.
+/// Full response when loading a group's history and append-only event stream from the backend,
+/// including continuous debt simplification transfers.
 struct GroupLedgerHistoryResponse: Codable {
     let group: PersistentGroup
     let events: [LedgerEvent]
     let memberBalances: [GroupMemberBalance]
     let currentBalances: [String: Double]?
+    let simplifiedTransfers: [SimplifiedPayment]?
+    let simplifiedLines: [String]?
+    let totalTransferred: Double?
 }
 
 /// Payload to create a new persistent group.

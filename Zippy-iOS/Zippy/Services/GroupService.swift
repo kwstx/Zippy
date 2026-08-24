@@ -152,6 +152,25 @@ enum GroupService {
         return try jsonDecoder.decode(LedgerEvent.self, from: data)
     }
 
+    /// Fetches continuous simplified debt transfers calculated by the server's minimum-cash-flow algorithm for a group.
+    static func fetchSimplifiedPayments(groupId: UUID) async throws -> SimplifyExpensesAPIResponse {
+        guard let url = URL(string: "\(baseURL)/\(groupId.uuidString)/simplified") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            let errorText = String(data: data, encoding: .utf8) ?? "Failed to fetch simplified payments"
+            throw NSError(domain: "GroupService", code: (response as? HTTPURLResponse)?.statusCode ?? 0, userInfo: [NSLocalizedDescriptionKey: errorText])
+        }
+
+        return try jsonDecoder.decode(SimplifyExpensesAPIResponse.self, from: data)
+    }
+
     /// Deletes a persistent group and its append-only ledger entries.
     static func deleteGroup(groupId: UUID) async throws {
         guard let url = URL(string: "\(baseURL)/\(groupId.uuidString)") else {

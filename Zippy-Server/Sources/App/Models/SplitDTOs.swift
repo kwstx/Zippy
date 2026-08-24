@@ -16,13 +16,45 @@ public enum ReceiptCategory: String, Codable, CaseIterable, Content {
     }
 }
 
+public enum SplitMethod: String, Codable, CaseIterable, Content {
+    case equal = "equal"
+    case itemized = "itemized"
+    case percentage = "percentage"
+    case shares = "shares"
+    case exact = "exact"
+
+    public var displayName: String {
+        switch self {
+        case .equal: return "EQUAL"
+        case .itemized: return "ITEMIZED"
+        case .percentage: return "PERCENT"
+        case .shares: return "SHARES"
+        case .exact: return "EXACT"
+        }
+    }
+}
+
 /// Request body for creating or updating a split session.
 struct CreateSplitRequest: Content {
     let receiptId: UUID
     let participants: [ParticipantDTO]
+    let splitMethod: SplitMethod?
     /// Item index (as string key) → array of participant UUIDs assigned to that item.
-    let assignments: [String: [UUID]]
+    let assignments: [String: [UUID]]?
+    let percentageAllocations: [String: Double]?
+    let shareAllocations: [String: Double]?
+    let exactAllocations: [String: Double]?
     let category: String?
+}
+
+/// Request body for updating the active split method and its allocations.
+struct UpdateSplitMethodRequest: Content {
+    let splitMethod: SplitMethod
+    let participants: [ParticipantDTO]?
+    let assignments: [String: [UUID]]?
+    let percentageAllocations: [String: Double]?
+    let shareAllocations: [String: Double]?
+    let exactAllocations: [String: Double]?
 }
 
 /// Request body for patching an extracted receipt with manual corrections or edits.
@@ -169,11 +201,46 @@ struct SplitSessionResponse: Content {
     let id: UUID
     let receiptId: UUID
     let participants: [ParticipantDTO]
+    let splitMethod: SplitMethod?
+    let assignments: [String: [UUID]]?
+    let percentageAllocations: [String: Double]?
+    let shareAllocations: [String: Double]?
+    let exactAllocations: [String: Double]?
     let balances: [PersonBalanceDTO]
     let receiptTotal: Double
     let category: String?
     let shareableURL: String?
     let createdAt: Date?
+
+    init(
+        id: UUID,
+        receiptId: UUID,
+        participants: [ParticipantDTO],
+        splitMethod: SplitMethod? = nil,
+        assignments: [String: [UUID]]? = nil,
+        percentageAllocations: [String: Double]? = nil,
+        shareAllocations: [String: Double]? = nil,
+        exactAllocations: [String: Double]? = nil,
+        balances: [PersonBalanceDTO],
+        receiptTotal: Double,
+        category: String? = nil,
+        shareableURL: String? = nil,
+        createdAt: Date? = nil
+    ) {
+        self.id = id
+        self.receiptId = receiptId
+        self.participants = participants
+        self.splitMethod = splitMethod
+        self.assignments = assignments
+        self.percentageAllocations = percentageAllocations
+        self.shareAllocations = shareAllocations
+        self.exactAllocations = exactAllocations
+        self.balances = balances
+        self.receiptTotal = receiptTotal
+        self.category = category
+        self.shareableURL = shareableURL
+        self.createdAt = createdAt
+    }
 }
 
 /// Request body for selecting an external payment method.

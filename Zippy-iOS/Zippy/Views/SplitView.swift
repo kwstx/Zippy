@@ -2,7 +2,8 @@
 
 import SwiftUI
 
-/// Full-screen bill-splitting view with instant client-side calculation.
+/// Full-screen bill-splitting view with flexible split methods (Equal, Itemized, Percentage, Shares, Exact),
+/// instant client-side calculation, backend synchronization, and in-place monochrome totals refresh.
 struct SplitView: View {
     @StateObject private var viewModel: SplitViewModel
     @State private var newParticipantName: String = ""
@@ -34,30 +35,45 @@ struct SplitView: View {
 
                 thinDivider()
 
+                // MARK: - Split Method Segmented Control (Pure Text Labels)
+                SplitMethodSegmentedControl(
+                    selectedMethod: $viewModel.selectedSplitMethod,
+                    onMethodChanged: { newMethod in
+                        viewModel.setSplitMethod(newMethod)
+                    }
+                )
+                .padding(.vertical, 12)
+
+                thinDivider()
+
                 // MARK: - Participants Section
                 participantsSection()
                 thinDivider()
 
-                // MARK: - Items Section
-                ForEach(Array(viewModel.receipt.items.enumerated()), id: \.offset) { index, item in
-                    itemRow(item: item, index: index)
-                    thinDivider()
-                }
+                // MARK: - Method Controls Section (Equal / Itemized / Percentage / Shares / Exact)
+                SplitMethodControlsView(
+                    viewModel: viewModel,
+                    selectedItemIndex: $selectedItemIndex
+                )
 
-                // MARK: - Summary
+                thinDivider()
+
+                // MARK: - Summary Rows
                 summaryRow(label: "Subtotal", amount: viewModel.receipt.subtotal)
                 thinDivider()
                 summaryRow(label: "Tax", amount: viewModel.receipt.tax)
                 thinDivider()
                 summaryRow(label: "Tip", amount: viewModel.receipt.tip)
                 thinDivider()
+                summaryRow(label: "Total", amount: viewModel.receipt.total, isBold: true)
+                thinDivider()
 
-                // MARK: - Who Owes What
+                // MARK: - Who Owes What (Monochrome Totals Refreshed In Place)
                 if let result = viewModel.splitResult, !result.balances.isEmpty {
                     balancesSection(result: result)
                 }
 
-                // MARK: - Finalize
+                // MARK: - Finalize & Share
                 if !viewModel.participants.isEmpty {
                     finalizeSection()
                 }
@@ -96,7 +112,6 @@ struct SplitView: View {
             }
         }
     }
-
 
     // MARK: - Participants
 
@@ -165,82 +180,25 @@ struct SplitView: View {
         )
     }
 
-    // MARK: - Item Rows
-
-    @ViewBuilder
-    private func itemRow(item: ReceiptItem, index: Int) -> some View {
-        Button(action: { selectedItemIndex = index }) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(item.name)
-                        .font(.system(.body, design: .monospaced))
-                        .foregroundColor(.white)
-
-                    if item.quantity > 1 {
-                        Text("qty \(item.quantity)")
-                            .font(.system(.caption2, design: .monospaced))
-                            .foregroundColor(Color(white: 0.5))
-                    }
-
-                    // Assigned participants
-                    let assigned = viewModel.assignees(for: index)
-                    if assigned.isEmpty {
-                        HStack(spacing: 4) {
-                            Image(systemName: "exclamationmark.triangle")
-                                .font(.system(size: 10))
-                            Text("unassigned")
-                                .font(.system(.caption2, design: .monospaced))
-                        }
-                        .foregroundColor(Color(white: 0.4))
-                    } else {
-                        HStack(spacing: 4) {
-                            ForEach(assigned) { person in
-                                Text(person.initial)
-                                    .font(.system(size: 9, design: .monospaced))
-                                    .fontWeight(.bold)
-                                    .foregroundColor(.black)
-                                    .frame(width: 18, height: 18)
-                                    .background(Color.white)
-                                    .clipShape(Circle())
-                            }
-                            if assigned.count > 1 {
-                                Text("÷\(assigned.count)")
-                                    .font(.system(.caption2, design: .monospaced))
-                                    .foregroundColor(Color(white: 0.5))
-                            }
-                        }
-                    }
-                }
-
-                Spacer()
-
-                Text(formatPrice(item.price))
-                    .font(.system(.body, design: .monospaced))
-                    .foregroundColor(.white)
-            }
-            .padding(.vertical, 12)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
     // MARK: - Summary Rows
 
     @ViewBuilder
-    private func summaryRow(label: String, amount: Double) -> some View {
+    private func summaryRow(label: String, amount: Double, isBold: Bool = false) -> some View {
         HStack {
             Text(label)
                 .font(.system(.body, design: .monospaced))
-                .foregroundColor(Color(white: 0.7))
+                .fontWeight(isBold ? .bold : .regular)
+                .foregroundColor(isBold ? .white : Color(white: 0.7))
             Spacer()
             Text(formatPrice(amount))
                 .font(.system(.body, design: .monospaced))
-                .foregroundColor(Color(white: 0.7))
+                .fontWeight(isBold ? .bold : .regular)
+                .foregroundColor(isBold ? .white : Color(white: 0.7))
         }
         .padding(.vertical, 12)
     }
 
-    // MARK: - Balances
+    // MARK: - Balances (Monochrome Totals In Place)
 
     @ViewBuilder
     private func balancesSection(result: SplitResult) -> some View {
@@ -250,9 +208,15 @@ struct SplitView: View {
                     .font(.system(.caption2, design: .monospaced))
                     .foregroundColor(Color(white: 0.4))
                 Spacer()
-                Text("Tap person to pay / settle")
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundColor(Color(white: 0.4))
+                if viewModel.isSyncingWithBackend {
+                    Text("SYNCING...")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundColor(Color(white: 0.5))
+                } else {
+                    Text("Tap person to pay / settle")
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(Color(white: 0.4))
+                }
             }
             .padding(.vertical, 14)
 
@@ -305,16 +269,16 @@ struct SplitView: View {
                     balanceRow(label: "Tax", amount: balance.taxShare)
                     balanceRow(label: "Tip", amount: balance.tipShare)
 
-                    // Person total
+                    // Person total (Monochrome high-contrast display)
                     HStack {
                         Text("Total")
                             .font(.system(.body, design: .monospaced))
-                            .fontWeight(.medium)
+                            .fontWeight(.bold)
                             .foregroundColor(.white)
                         Spacer()
                         Text(formatPrice(balance.total))
                             .font(.system(.body, design: .monospaced))
-                            .fontWeight(.medium)
+                            .fontWeight(.bold)
                             .foregroundColor(.white)
                     }
                     .padding(.vertical, 8)
@@ -372,7 +336,6 @@ struct SplitView: View {
             thinDivider()
         }
     }
-
 
     @ViewBuilder
     private func balanceRow(label: String, amount: Double) -> some View {

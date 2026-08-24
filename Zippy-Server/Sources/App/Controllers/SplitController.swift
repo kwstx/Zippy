@@ -23,6 +23,32 @@ struct SplitController {
         return "\(baseURL)/s/\(token)"
     }
 
+    /// Converts a SplitSession model and receipt into SplitSessionResponse DTO.
+    private static func makeSplitSessionResponse(session: SplitSession, receipt: ExtractedReceipt?, req: Request) -> SplitSessionResponse {
+        let token = session.shareToken ?? session.id!.uuidString
+        let shareableURL = session.shareToken != nil
+            ? Self.makeShortURL(for: token, req: req)
+            : "/api/splits/\(session.id!.uuidString)"
+        let method = session.splitMethod.flatMap(SplitMethod.init(rawValue:)) ?? .itemized
+        let total = receipt?.total ?? session.balances.reduce(0.0) { $0 + $1.total }
+
+        return SplitSessionResponse(
+            id: session.id!,
+            receiptId: session.receiptId,
+            participants: session.participants,
+            splitMethod: method,
+            assignments: session.assignments,
+            percentageAllocations: session.percentageAllocations,
+            shareAllocations: session.shareAllocations,
+            exactAllocations: session.exactAllocations,
+            balances: session.balances,
+            receiptTotal: total,
+            category: session.category ?? receipt?.category,
+            shareableURL: shareableURL,
+            createdAt: session.createdAt
+        )
+    }
+
     /// Creates or updates a split session with server-computed balances.
     @Sendable
     func create(req: Request) async throws -> SplitSessionResponse {
@@ -33,13 +59,22 @@ struct SplitController {
             throw Abort(.notFound, reason: "No receipt found with ID: \(input.receiptId)")
         }
 
-        // Compute authoritative balances
+        let selectedMethod = input.splitMethod ?? .itemized
+        let assignments = input.assignments ?? [:]
+
+        // Compute authoritative balances across flexible methods
         let balances = SplitCalculator.calculate(
+            method: selectedMethod,
             items: receipt.items,
-            participants: input.participants,
-            assignments: input.assignments,
+            receiptSubtotal: receipt.subtotal,
             tax: receipt.tax,
-            tip: receipt.tip
+            tip: receipt.tip,
+            total: receipt.total,
+            participants: input.participants,
+            assignments: assignments,
+            percentageAllocations: input.percentageAllocations,
+            shareAllocations: input.shareAllocations,
+            exactAllocations: input.exactAllocations
         )
 
         // Upsert: check for existing session for this receipt
@@ -55,7 +90,11 @@ struct SplitController {
             .filter(\.$receiptId == input.receiptId)
             .first() {
             existing.participants = input.participants
-            existing.assignments = input.assignments
+            existing.splitMethod = selectedMethod.rawValue
+            existing.assignments = assignments
+            existing.percentageAllocations = input.percentageAllocations
+            existing.shareAllocations = input.shareAllocations
+            existing.exactAllocations = input.exactAllocations
             existing.balances = balances
             existing.category = categoryTag
             if existing.shareToken == nil {
@@ -69,7 +108,11 @@ struct SplitController {
             let newSession = SplitSession(
                 receiptId: input.receiptId,
                 participants: input.participants,
-                assignments: input.assignments,
+                splitMethod: selectedMethod.rawValue,
+                assignments: assignments,
+                percentageAllocations: input.percentageAllocations,
+                shareAllocations: input.shareAllocations,
+                exactAllocations: input.exactAllocations,
                 balances: balances,
                 shareToken: generatedToken,
                 category: categoryTag
@@ -79,18 +122,9 @@ struct SplitController {
             token = generatedToken
         }
 
-        req.logger.info("Split session \(session.id?.uuidString ?? "?") saved for receipt \(input.receiptId) with category '\(session.category ?? "none")' and token \(token)")
+        req.logger.info("Split session \(session.id?.uuidString ?? "?") saved for receipt \(input.receiptId) with method '\(selectedMethod.rawValue)' and token \(token)")
 
-        return SplitSessionResponse(
-            id: session.id!,
-            receiptId: session.receiptId,
-            participants: session.participants,
-            balances: session.balances,
-            receiptTotal: receipt.total,
-            category: session.category,
-            shareableURL: Self.makeShortURL(for: token, req: req),
-            createdAt: session.createdAt
-        )
+        return Self.makeSplitSessionResponse(session: session, receipt: receipt, req: req)
     }
 
     /// Retrieves a previously saved split session by database ID.
@@ -106,21 +140,7 @@ struct SplitController {
 
         // Load receipt for the total
         let receipt = try await ExtractedReceipt.find(session.receiptId, on: req.db)
-        let token = session.shareToken ?? session.id!.uuidString
-        let shareableURL = session.shareToken != nil
-            ? Self.makeShortURL(for: token, req: req)
-            : "/api/splits/\(session.id!.uuidString)"
-
-        return SplitSessionResponse(
-            id: session.id!,
-            receiptId: session.receiptId,
-            participants: session.participants,
-            balances: session.balances,
-            receiptTotal: receipt?.total ?? 0,
-            category: session.category ?? receipt?.category,
-            shareableURL: shareableURL,
-            createdAt: session.createdAt
-        )
+        return Self.makeSplitSessionResponse(session: session, receipt: receipt, req: req)
     }
 
     /// Retrieves a split session by token or renders the lightweight guest HTML page.
@@ -144,16 +164,7 @@ struct SplitController {
         let isJsonRequest = acceptHeader.contains("application/json") && !acceptHeader.contains("text/html")
 
         if isJsonRequest {
-            let responseDTO = SplitSessionResponse(
-                id: session.id!,
-                receiptId: session.receiptId,
-                participants: session.participants,
-                balances: session.balances,
-                receiptTotal: receipt.total,
-                category: session.category ?? receipt.category,
-                shareableURL: Self.makeShortURL(for: token, req: req),
-                createdAt: session.createdAt
-            )
+            let responseDTO = Self.makeSplitSessionResponse(session: session, receipt: receipt, req: req)
             return try await responseDTO.encodeResponse(for: req)
         }
 
@@ -597,19 +608,76 @@ struct SplitController {
 
         req.logger.info("Updated category on split session \(session.id?.uuidString ?? "") to '\(input.category ?? "none")'")
 
-        let tokenStr = session.shareToken ?? session.id!.uuidString
         let receipt = try await ExtractedReceipt.find(session.receiptId, on: req.db)
+        return Self.makeSplitSessionResponse(session: session, receipt: receipt, req: req)
+    }
 
-        return SplitSessionResponse(
-            id: session.id!,
-            receiptId: session.receiptId,
+    /// Updates the split method and recalculates allocations & balances on the backend.
+    @Sendable
+    func updateSplitMethod(req: Request) async throws -> SplitSessionResponse {
+        let token = req.parameters.get("token")
+        let sessionId = req.parameters.get("id", as: UUID.self)
+        let input = try req.content.decode(UpdateSplitMethodRequest.self)
+
+        let session: SplitSession
+        if let token = token {
+            guard let found = try await SplitSession.query(on: req.db)
+                .filter(\.$shareToken == token)
+                .first() else {
+                throw Abort(.notFound, reason: "No split session found for token: \(token)")
+            }
+            session = found
+        } else if let sessionId = sessionId {
+            guard let found = try await SplitSession.find(sessionId, on: req.db) else {
+                throw Abort(.notFound, reason: "No split session found with ID: \(sessionId)")
+            }
+            session = found
+        } else {
+            throw Abort(.badRequest, reason: "Missing token or session ID.")
+        }
+
+        guard let receipt = try await ExtractedReceipt.find(session.receiptId, on: req.db) else {
+            throw Abort(.notFound, reason: "Receipt not found for split session.")
+        }
+
+        if let participants = input.participants, !participants.isEmpty {
+            session.participants = participants
+        }
+        if let assignments = input.assignments {
+            session.assignments = assignments
+        }
+        if let percentageAllocations = input.percentageAllocations {
+            session.percentageAllocations = percentageAllocations
+        }
+        if let shareAllocations = input.shareAllocations {
+            session.shareAllocations = shareAllocations
+        }
+        if let exactAllocations = input.exactAllocations {
+            session.exactAllocations = exactAllocations
+        }
+        session.splitMethod = input.splitMethod.rawValue
+
+        // Authoritative recalculation on the backend
+        let balances = SplitCalculator.calculate(
+            method: input.splitMethod,
+            items: receipt.items,
+            receiptSubtotal: receipt.subtotal,
+            tax: receipt.tax,
+            tip: receipt.tip,
+            total: receipt.total,
             participants: session.participants,
-            balances: session.balances,
-            receiptTotal: receipt?.total ?? 0,
-            category: session.category,
-            shareableURL: Self.makeShortURL(for: tokenStr, req: req),
-            createdAt: session.createdAt
+            assignments: session.assignments,
+            percentageAllocations: session.percentageAllocations,
+            shareAllocations: session.shareAllocations,
+            exactAllocations: session.exactAllocations
         )
+        session.balances = balances
+
+        try await session.update(on: req.db)
+
+        req.logger.info("Updated split method to '\(input.splitMethod.rawValue)' on session \(session.id?.uuidString ?? "")")
+
+        return Self.makeSplitSessionResponse(session: session, receipt: receipt, req: req)
     }
 
     /// Returns past split sessions and receipts filtered by optional category tag and text search.

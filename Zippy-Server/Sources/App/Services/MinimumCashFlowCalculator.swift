@@ -162,6 +162,105 @@ public enum MinimumCashFlowCalculator {
         return simplifyExpenses(participants: participants, expenses: [expense])
     }
 
+    /// Optimizes continuous aggregate group net balances across many expenses and settlements
+    /// into the fewest direct transfers using the same pure-Swift graph optimization algorithm.
+    ///
+    /// - Parameters:
+    ///   - members: All members in the persistent group.
+    ///   - netBalances: Authoritative net balance for each member UUID (+ for owed, - for owes).
+    /// - Returns: Minimal set of transfers (at most N-1) and formatted text lines.
+    public static func simplifyGroupBalances(
+        members: [ParticipantDTO],
+        netBalances: [UUID: Double]
+    ) -> SimplifyExpensesResponse {
+        guard !members.isEmpty else {
+            return SimplifyExpensesResponse(
+                transfers: [],
+                lines: ["No members in group."],
+                totalTransferred: 0,
+                originalExpenseCount: 0,
+                transferCount: 0
+            )
+        }
+
+        // Build participant balance list with integer cents
+        var balances = members.map { member in
+            let net = netBalances[member.id] ?? 0.0
+            let cents = Int64((net * 100).rounded())
+            return ParticipantBalance(
+                id: member.id,
+                name: member.name,
+                netCents: cents
+            )
+        }
+
+        // Run pure-Swift Minimum Cash Flow greedy algorithm
+        let transfers = solveMinimumCashFlow(balances: &balances)
+
+        let lines: [String]
+        if transfers.isEmpty {
+            lines = ["All balances are settled. No transfers needed."]
+        } else {
+            lines = transfers.map { $0.formattedText }
+        }
+
+        let totalTransferred = transfers.reduce(0.0) { $0 + $1.amount }
+
+        return SimplifyExpensesResponse(
+            transfers: transfers,
+            lines: lines,
+            totalTransferred: round2(totalTransferred),
+            originalExpenseCount: 0,
+            transferCount: transfers.count
+        )
+    }
+
+    /// Optimizes member balances into minimal transfers.
+    ///
+    /// - Parameter memberBalances: Calculated group member balance DTOs.
+    /// - Returns: Minimal set of transfers and formatted text lines.
+    public static func simplifyMemberBalances(
+        memberBalances: [GroupMemberBalanceDTO]
+    ) -> SimplifyExpensesResponse {
+        guard !memberBalances.isEmpty else {
+            return SimplifyExpensesResponse(
+                transfers: [],
+                lines: ["No member balances to simplify."],
+                totalTransferred: 0,
+                originalExpenseCount: 0,
+                transferCount: 0
+            )
+        }
+
+        var balances = memberBalances.map { member in
+            let cents = Int64((member.netBalance * 100).rounded())
+            return ParticipantBalance(
+                id: member.participantId,
+                name: member.name,
+                netCents: cents
+            )
+        }
+
+        let transfers = solveMinimumCashFlow(balances: &balances)
+
+        let lines: [String]
+        if transfers.isEmpty {
+            lines = ["All balances are settled. No transfers needed."]
+        } else {
+            lines = transfers.map { $0.formattedText }
+        }
+
+        let totalTransferred = transfers.reduce(0.0) { $0 + $1.amount }
+
+        return SimplifyExpensesResponse(
+            transfers: transfers,
+            lines: lines,
+            totalTransferred: round2(totalTransferred),
+            originalExpenseCount: 0,
+            transferCount: transfers.count
+        )
+    }
+
     // MARK: - Core Minimum Cash Flow Solver
 
     /// Iterative greedy minimum-cash-flow optimization algorithm.

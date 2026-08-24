@@ -7,11 +7,20 @@ struct SplitSessionResponse: Decodable {
     let id: UUID
     let receiptId: UUID
     let participants: [SplitParticipantDTO]
+    let splitMethod: String?
+    let assignments: [String: [UUID]]?
+    let percentageAllocations: [String: Double]?
+    let shareAllocations: [String: Double]?
+    let exactAllocations: [String: Double]?
     let balances: [SplitBalanceDTO]
     let receiptTotal: Double
     let category: String?
     let shareableURL: String?
     let createdAt: String?
+
+    var parsedSplitMethod: SplitMethod? {
+        splitMethod.flatMap(SplitMethod.init(rawValue:))
+    }
 
     struct SplitParticipantDTO: Decodable {
         let id: UUID
@@ -242,13 +251,21 @@ enum ReceiptService {
     /// - Parameters:
     ///   - receiptId: The database UUID of the extracted receipt.
     ///   - participants: The people splitting the bill.
+    ///   - splitMethod: The chosen split method (equal, itemized, percentage, shares, exact).
     ///   - assignments: Item index (as string) → array of participant UUIDs.
+    ///   - percentageAllocations: Custom percentages per participant UUID.
+    ///   - shareAllocations: Custom share counts per participant UUID.
+    ///   - exactAllocations: Custom exact dollar amounts per participant UUID.
     ///   - category: Optional category tag ("restaurants", "trips", "roommates", "everyday").
     /// - Returns: The server-computed split session response.
     static func finalizeSplit(
         receiptId: UUID,
         participants: [Participant],
-        assignments: [String: [UUID]],
+        splitMethod: SplitMethod = .itemized,
+        assignments: [String: [UUID]]? = nil,
+        percentageAllocations: [String: Double]? = nil,
+        shareAllocations: [String: Double]? = nil,
+        exactAllocations: [String: Double]? = nil,
         category: String? = nil
     ) async throws -> SplitSessionResponse {
         guard let url = URL(string: "http://localhost:8080/api/splits") else {
@@ -262,7 +279,11 @@ enum ReceiptService {
         struct CreateSplitRequest: Encodable {
             let receiptId: UUID
             let participants: [ParticipantPayload]
-            let assignments: [String: [UUID]]
+            let splitMethod: String
+            let assignments: [String: [UUID]]?
+            let percentageAllocations: [String: Double]?
+            let shareAllocations: [String: Double]?
+            let exactAllocations: [String: Double]?
             let category: String?
 
             struct ParticipantPayload: Encodable {
@@ -274,7 +295,11 @@ enum ReceiptService {
         let payload = CreateSplitRequest(
             receiptId: receiptId,
             participants: participants.map { .init(id: $0.id, name: $0.name) },
+            splitMethod: splitMethod.rawValue,
             assignments: assignments,
+            percentageAllocations: percentageAllocations,
+            shareAllocations: shareAllocations,
+            exactAllocations: exactAllocations,
             category: category
         )
 
@@ -289,6 +314,72 @@ enum ReceiptService {
                 domain: "ReceiptService",
                 code: (response as? HTTPURLResponse)?.statusCode ?? 0,
                 userInfo: [NSLocalizedDescriptionKey: "Split finalization failed: \(body)"]
+            )
+        }
+
+        return try JSONDecoder().decode(SplitSessionResponse.self, from: data)
+    }
+
+    /// Sends the selected split method and its allocations to the Vapor backend for recalculation and storage.
+    static func updateSplitMethod(
+        sessionId: UUID? = nil,
+        token: String? = nil,
+        method: SplitMethod,
+        participants: [Participant]? = nil,
+        assignments: [String: [UUID]]? = nil,
+        percentageAllocations: [String: Double]? = nil,
+        shareAllocations: [String: Double]? = nil,
+        exactAllocations: [String: Double]? = nil
+    ) async throws -> SplitSessionResponse {
+        let endpoint: String
+        if let token = token, !token.isEmpty {
+            endpoint = "http://localhost:8080/s/\(token)/method"
+        } else if let sessionId = sessionId {
+            endpoint = "http://localhost:8080/api/splits/\(sessionId)/method"
+        } else {
+            throw URLError(.badURL)
+        }
+
+        guard let url = URL(string: endpoint) else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        struct UpdateMethodRequest: Encodable {
+            let splitMethod: String
+            let participants: [ParticipantPayload]?
+            let assignments: [String: [UUID]]?
+            let percentageAllocations: [String: Double]?
+            let shareAllocations: [String: Double]?
+            let exactAllocations: [String: Double]?
+
+            struct ParticipantPayload: Encodable {
+                let id: UUID
+                let name: String
+            }
+        }
+
+        let payload = UpdateMethodRequest(
+            splitMethod: method.rawValue,
+            participants: participants?.map { .init(id: $0.id, name: $0.name) },
+            assignments: assignments,
+            percentageAllocations: percentageAllocations,
+            shareAllocations: shareAllocations,
+            exactAllocations: exactAllocations
+        )
+
+        request.httpBody = try JSONEncoder().encode(payload)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            let body = String(data: data, encoding: .utf8) ?? ""
+            throw NSError(
+                domain: "ReceiptService",
+                code: (response as? HTTPURLResponse)?.statusCode ?? 0,
+                userInfo: [NSLocalizedDescriptionKey: "Failed to update split method: \(body)"]
             )
         }
 

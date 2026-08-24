@@ -166,7 +166,10 @@ struct GroupController {
             group: groupDTO,
             events: Array(sortedHistoryEvents),
             memberBalances: state.memberBalancesDTO,
-            currentBalances: currentBalancesStringMap
+            currentBalances: currentBalancesStringMap,
+            simplifiedTransfers: state.simplifiedTransfers,
+            simplifiedLines: state.simplifiedLines,
+            totalTransferred: state.totalTransferred
         )
     }
 
@@ -312,6 +315,57 @@ struct GroupController {
             note: event.note,
             createdAt: event.createdAt
         )
+    }
+
+    /// Retrieves continuous debt simplification transfers for a group,
+    /// returning JSON or rendering the minimalist monochrome HTML view.
+    @Sendable
+    func getSimplifiedPayments(req: Request) async throws -> Response {
+        guard let id = req.parameters.get("id", as: UUID.self) else {
+            throw Abort(.badRequest, reason: "Invalid group ID.")
+        }
+
+        guard let group = try await PersistentGroup.find(id, on: req.db) else {
+            throw Abort(.notFound, reason: "Group not found.")
+        }
+
+        let events = try await LedgerEvent.query(on: req.db)
+            .filter(\.$groupId == id)
+            .sort(\.$createdAt, .asc)
+            .all()
+
+        let state = GroupLedgerService.computeLedgerState(
+            members: group.members,
+            events: events
+        )
+
+        let responseDTO = SimplifyExpensesResponse(
+            transfers: state.simplifiedTransfers,
+            lines: state.simplifiedLines,
+            totalTransferred: state.totalTransferred,
+            originalExpenseCount: events.count,
+            transferCount: state.simplifiedTransfers.count
+        )
+
+        let acceptHeader = req.headers.first(name: .accept) ?? ""
+        let isJsonRequest = acceptHeader.contains("application/json") && !acceptHeader.contains("text/html")
+
+        if isJsonRequest {
+            return try await responseDTO.encodeResponse(for: req)
+        }
+
+        // Render minimalist black-and-white screen titled "Simplified payments"
+        let baseURL = Environment.get("BASE_URL") ?? "http://localhost:8080"
+        let html = GuestViewRenderer.renderSimplifiedPayments(
+            lines: state.simplifiedLines,
+            title: "Simplified payments · \(group.name)",
+            backURL: nil,
+            baseURL: baseURL
+        )
+
+        var headers = HTTPHeaders()
+        headers.add(name: .contentType, value: "text/html; charset=utf-8")
+        return Response(status: .ok, headers: headers, body: .init(string: html))
     }
 
     /// Deletes a group and cascades its ledger events.

@@ -12,6 +12,8 @@ func routes(_ app: Application) throws {
             groups.get(":id", use: groupController.get)
             groups.get(":id", "history", use: groupController.getHistory)
             groups.get(":id", "ledger", use: groupController.getHistory)
+            groups.get(":id", "simplified", use: groupController.getSimplifiedPayments)
+            groups.get(":id", "transfers", use: groupController.getSimplifiedPayments)
             groups.post(":id", "expenses", use: groupController.addExpense)
             groups.post(":id", "settlements", use: groupController.addSettlement)
             groups.delete(":id", use: groupController.delete)
@@ -33,6 +35,8 @@ func routes(_ app: Application) throws {
             splits.post(use: splitController.create)
             splits.get(":id", use: splitController.get)
             splits.patch(":id", "category", use: splitController.updateCategory)
+            splits.post(":id", "method", use: splitController.updateSplitMethod)
+            splits.patch(":id", "method", use: splitController.updateSplitMethod)
             splits.get("token", ":token", use: splitController.getByToken)
             splits.post("simplify", use: splitController.simplifyExpenses)
             splits.get(":token", "simplified", use: splitController.getSimplifiedPayments)
@@ -40,6 +44,8 @@ func routes(_ app: Application) throws {
             splits.post(":token", "select-payment-method", use: splitController.selectPaymentMethod)
             splits.post(":token", "confirm", use: splitController.confirmSettlement)
             splits.post(":token", "category", use: splitController.updateCategory)
+            splits.post(":token", "method", use: splitController.updateSplitMethod)
+            splits.patch(":token", "method", use: splitController.updateSplitMethod)
             splits.post("webhook", use: splitController.handleWebhook)
             splits.get(":token", "status", use: splitController.getStatus)
         }
@@ -58,6 +64,8 @@ func routes(_ app: Application) throws {
         guest.post("select-payment-method", use: splitController.selectPaymentMethod)
         guest.post("confirm", use: splitController.confirmSettlement)
         guest.post("category", use: splitController.updateCategory)
+        guest.post("method", use: splitController.updateSplitMethod)
+        guest.patch("method", use: splitController.updateSplitMethod)
         guest.get("status", use: splitController.getStatus)
     }
 

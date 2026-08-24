@@ -181,22 +181,32 @@ public struct LedgerEventResponseDTO: Content {
     }
 }
 
-/// Complete ledger event stream history and computed balances for a group.
+/// Complete ledger event stream history and computed balances for a group,
+/// including continuous debt simplification transfers.
 public struct GroupLedgerHistoryResponseDTO: Content {
     public let group: GroupResponseDTO
     public let events: [LedgerEventResponseDTO]
     public let memberBalances: [GroupMemberBalanceDTO]
     public let currentBalances: [String: Double]
+    public let simplifiedTransfers: [SimplifiedPaymentDTO]
+    public let simplifiedLines: [String]
+    public let totalTransferred: Double
 
     public init(
         group: GroupResponseDTO,
         events: [LedgerEventResponseDTO],
         memberBalances: [GroupMemberBalanceDTO],
-        currentBalances: [String: Double]
+        currentBalances: [String: Double],
+        simplifiedTransfers: [SimplifiedPaymentDTO] = [],
+        simplifiedLines: [String] = [],
+        totalTransferred: Double = 0.0
     ) {
         self.group = group
         self.events = events
         self.memberBalances = memberBalances
         self.currentBalances = currentBalances
+        self.simplifiedTransfers = simplifiedTransfers
+        self.simplifiedLines = simplifiedLines
+        self.totalTransferred = totalTransferred
     }
 }

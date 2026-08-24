@@ -10,6 +10,7 @@ struct GroupLedgerDetailView: View {
 
     @State private var showingAddExpenseSheet = false
     @State private var showingRecordSettlementSheet = false
+    @State private var showingSimplifiedPaymentsSheet = false
 
     init(group: PersistentGroup) {
         self.initialGroup = group
@@ -44,6 +45,16 @@ struct GroupLedgerDetailView: View {
 
                         Rectangle()
                             .fill(Color.black)
+                            .frame(height: 1)
+
+                        // MARK: - Continuous Debt Simplification
+                        simplifiedPaymentsSection
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 14)
+                            .background(Color.white)
+
+                        Rectangle()
+                            .fill(Color.black.opacity(0.15))
                             .frame(height: 1)
 
                         // MARK: - Member Balances Breakdown
@@ -119,6 +130,11 @@ struct GroupLedgerDetailView: View {
                 }
             }
         }
+        .sheet(isPresented: $showingSimplifiedPaymentsSheet) {
+            NavigationStack {
+                SimplifiedPaymentsView(lines: viewModel.simplifiedLines)
+            }
+        }
         .onAppear {
             viewModel.loadHistory()
         }
@@ -150,6 +166,71 @@ struct GroupLedgerDetailView: View {
                 Text(viewModel.group?.formattedBalance ?? initialGroup.formattedBalance)
                     .font(.system(size: 22, weight: .bold, design: .monospaced))
                     .foregroundColor(.black)
+            }
+        }
+    }
+
+    // MARK: - Continuous Debt Simplification Section
+    @ViewBuilder
+    private var simplifiedPaymentsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center) {
+                Text("SIMPLIFIED PAYMENTS")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundColor(Color(white: 0.4))
+
+                Spacer()
+
+                Button(action: { showingSimplifiedPaymentsSheet = true }) {
+                    HStack(spacing: 4) {
+                        Text(viewModel.simplifiedTransfers.isEmpty ? "SETTLED" : "\(viewModel.simplifiedTransfers.count) DIRECT TRANSFERS")
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 8, weight: .bold, design: .monospaced))
+                    }
+                    .foregroundColor(.black)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .overlay(Rectangle().stroke(Color.black, lineWidth: 0.8))
+                }
+            }
+
+            if viewModel.simplifiedTransfers.isEmpty {
+                HStack {
+                    Text("All balances are settled. No transfers needed.")
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .foregroundColor(Color(white: 0.4))
+                        .padding(.vertical, 8)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                VStack(spacing: 6) {
+                    ForEach(viewModel.simplifiedTransfers) { transfer in
+                        HStack {
+                            Text(transfer.fromName)
+                                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                                .foregroundColor(.black)
+
+                            Text("pays")
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundColor(Color(white: 0.4))
+
+                            Text(transfer.toName)
+                                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                                .foregroundColor(.black)
+
+                            Spacer()
+
+                            Text(String(format: "$%.2f", transfer.amount))
+                                .font(.system(size: 14, weight: .bold, design: .monospaced))
+                                .foregroundColor(.black)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Color.white)
+                        .overlay(Rectangle().stroke(Color.black.opacity(0.2), lineWidth: 0.5))
+                    }
+                }
             }
         }
     }

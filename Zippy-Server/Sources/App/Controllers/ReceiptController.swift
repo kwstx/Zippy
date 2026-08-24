@@ -180,13 +180,20 @@ struct ReceiptController {
         var shareableURL: String? = nil
 
         if let session = try await SplitSession.query(on: req.db).filter(\.$receiptId == id).first() {
+            let method = session.splitMethod.flatMap(SplitMethod.init(rawValue:)) ?? .itemized
             // Recompute authoritative per-person balances with updated receipt items and taxes
             let updatedBalances = SplitCalculator.calculate(
+                method: method,
                 items: receipt.items,
+                receiptSubtotal: receipt.subtotal,
+                tax: receipt.tax,
+                tip: receipt.tip,
+                total: receipt.total,
                 participants: session.participants,
                 assignments: session.assignments,
-                tax: receipt.tax,
-                tip: receipt.tip
+                percentageAllocations: session.percentageAllocations,
+                shareAllocations: session.shareAllocations,
+                exactAllocations: session.exactAllocations
             )
 
             // Preserve existing payment/settlement flags for participants
@@ -216,6 +223,11 @@ struct ReceiptController {
                 id: session.id!,
                 receiptId: session.receiptId,
                 participants: session.participants,
+                splitMethod: method,
+                assignments: session.assignments,
+                percentageAllocations: session.percentageAllocations,
+                shareAllocations: session.shareAllocations,
+                exactAllocations: session.exactAllocations,
                 balances: session.balances,
                 receiptTotal: receipt.total,
                 category: session.category,

@@ -16,9 +16,25 @@ final class SplitSession: Model, Content, @unchecked Sendable {
     @Field(key: "participants")
     var participants: [ParticipantDTO]
 
+    /// Active split method: "equal", "itemized", "percentage", "shares", "exact".
+    @OptionalField(key: "split_method")
+    var splitMethod: String?
+
     /// Item index (string key) → array of assigned participant UUIDs.
     @Field(key: "assignments")
     var assignments: [String: [UUID]]
+
+    /// Percentage allocation per participant ID (string key) → percentage value.
+    @OptionalField(key: "percentage_allocations")
+    var percentageAllocations: [String: Double]?
+
+    /// Share count allocation per participant ID (string key) → share weight.
+    @OptionalField(key: "share_allocations")
+    var shareAllocations: [String: Double]?
+
+    /// Exact dollar allocation per participant ID (string key) → dollar amount.
+    @OptionalField(key: "exact_allocations")
+    var exactAllocations: [String: Double]?
 
     /// Server-computed authoritative balances.
     @Field(key: "balances")
@@ -44,7 +60,11 @@ final class SplitSession: Model, Content, @unchecked Sendable {
         id: UUID? = nil,
         receiptId: UUID,
         participants: [ParticipantDTO],
-        assignments: [String: [UUID]],
+        splitMethod: String? = "itemized",
+        assignments: [String: [UUID]] = [:],
+        percentageAllocations: [String: Double]? = nil,
+        shareAllocations: [String: Double]? = nil,
+        exactAllocations: [String: Double]? = nil,
         balances: [PersonBalanceDTO],
         shareToken: String? = nil,
         category: String? = nil
@@ -52,7 +72,11 @@ final class SplitSession: Model, Content, @unchecked Sendable {
         self.id = id
         self.receiptId = receiptId
         self.participants = participants
+        self.splitMethod = splitMethod
         self.assignments = assignments
+        self.percentageAllocations = percentageAllocations
+        self.shareAllocations = shareAllocations
+        self.exactAllocations = exactAllocations
         self.balances = balances
         self.shareToken = shareToken
         self.category = category
