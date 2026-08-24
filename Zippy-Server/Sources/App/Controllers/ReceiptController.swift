@@ -88,4 +88,58 @@ struct ReceiptController {
         
         return receipt
     }
+
+    /// Updates the optional category tag on an extracted receipt.
+    @Sendable
+    func updateCategory(req: Request) async throws -> ExtractedReceipt {
+        guard let id = req.parameters.get("id", as: UUID.self) else {
+            throw Abort(.badRequest, reason: "Invalid or missing receipt ID.")
+        }
+
+        let input = try req.content.decode(UpdateCategoryRequest.self)
+
+        guard let receipt = try await ExtractedReceipt.find(id, on: req.db) else {
+            throw Abort(.notFound, reason: "No extracted receipt found with ID: \(id)")
+        }
+
+        receipt.category = input.category
+        try await receipt.update(on: req.db)
+
+        // Also sync category to linked split sessions if any
+        if let session = try await SplitSession.query(on: req.db).filter(\.$receiptId == id).first() {
+            session.category = input.category
+            try await session.update(on: req.db)
+        }
+
+        req.logger.info("Updated category for receipt \(id) to '\(input.category ?? "none")'")
+        return receipt
+    }
+
+    /// Lists receipts with optional category and keyword search query parameters.
+    @Sendable
+    func list(req: Request) async throws -> [ExtractedReceipt] {
+        let query = try? req.query.decode(HistoryFilterQuery.self)
+        let categoryFilter = query?.category?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let searchTerm = query?.search?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        var dbQuery = ExtractedReceipt.query(on: req.db)
+
+        if let category = categoryFilter, !category.isEmpty, category != "all" {
+            dbQuery = dbQuery.filter(\.$category == category)
+        }
+
+        var receipts = try await dbQuery.sort(\.$createdAt, .descending).all()
+
+        if let search = searchTerm, !search.isEmpty {
+            receipts = receipts.filter { receipt in
+                let matchesRef = receipt.referenceId.lowercased().contains(search)
+                let matchesItems = receipt.items.contains { $0.name.lowercased().contains(search) }
+                let matchesTotal = String(format: "%.2f", receipt.total).contains(search)
+                let matchesCategory = receipt.category?.lowercased().contains(search) ?? false
+                return matchesRef || matchesItems || matchesTotal || matchesCategory
+            }
+        }
+
+        return receipts
+    }
 }

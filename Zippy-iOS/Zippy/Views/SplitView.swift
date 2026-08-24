@@ -10,6 +10,7 @@ struct SplitView: View {
     @State private var showingAddParticipant: Bool = false
     @State private var isLinkCopied: Bool = false
     @State private var expandedParticipantId: UUID?
+    @State private var showingSimplifiedPayments: Bool = false
 
     init(receipt: ExtractedReceiptResponse) {
         _viewModel = StateObject(wrappedValue: SplitViewModel(receipt: receipt))
@@ -18,6 +19,19 @@ struct SplitView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
+                thinDivider()
+
+                // MARK: - Context Selector Section
+                ContextSelectorView(
+                    selectedCategory: $viewModel.selectedCategory,
+                    isDarkBackground: true,
+                    headerTitle: "CONTEXT",
+                    onSelectionChanged: { newCategory in
+                        viewModel.updateCategory(newCategory)
+                    }
+                )
+                .padding(.vertical, 12)
+
                 thinDivider()
 
                 // MARK: - Participants Section
@@ -68,6 +82,9 @@ struct SplitView: View {
                 viewModel: viewModel
             )
         }
+        .sheet(isPresented: $showingSimplifiedPayments) {
+            SimplifiedPaymentsView(transfers: viewModel.simplifiedPayments)
+        }
         .alert("Add Person", isPresented: $showingAddParticipant) {
             TextField("Name", text: $newParticipantName)
             Button("Add") {
@@ -79,6 +96,7 @@ struct SplitView: View {
             }
         }
     }
+
 
     // MARK: - Participants
 
@@ -327,8 +345,34 @@ struct SplitView: View {
                     thinDivider()
                 }
             }
+
+            // Simplified Payments Button
+            Button(action: {
+                Task {
+                    await viewModel.fetchSimplifiedPayments()
+                    showingSimplifiedPayments = true
+                }
+            }) {
+                HStack {
+                    Image(systemName: "arrow.triangle.swap")
+                        .font(.system(size: 11, design: .monospaced))
+                    Text("SIMPLIFIED PAYMENTS")
+                        .font(.system(.caption2, design: .monospaced))
+                        .fontWeight(.bold)
+                    Spacer()
+                    Text("→")
+                        .font(.system(.caption, design: .monospaced))
+                }
+                .foregroundColor(.white)
+                .padding(.vertical, 14)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            thinDivider()
         }
     }
+
 
     @ViewBuilder
     private func balanceRow(label: String, amount: Double) -> some View {

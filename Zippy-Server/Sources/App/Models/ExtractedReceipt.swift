@@ -36,6 +36,10 @@ final class ExtractedReceipt: Model, Content, @unchecked Sendable {
     @Field(key: "total")
     var total: Double
 
+    /// Optional category tag: "restaurants", "trips", "roommates", "everyday".
+    @OptionalField(key: "category")
+    var category: String?
+
     @Timestamp(key: "created_at", on: .create)
     var createdAt: Date?
 
@@ -48,7 +52,8 @@ final class ExtractedReceipt: Model, Content, @unchecked Sendable {
         subtotal: Double,
         tax: Double,
         tip: Double,
-        total: Double
+        total: Double,
+        category: String? = nil
     ) {
         self.id = id
         self.referenceId = referenceId
@@ -57,5 +62,6 @@ final class ExtractedReceipt: Model, Content, @unchecked Sendable {
         self.tax = tax
         self.tip = tip
         self.total = total
+        self.category = category
     }
 }

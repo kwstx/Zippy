@@ -1,11 +1,55 @@
 import Vapor
 
+public enum ReceiptCategory: String, Codable, CaseIterable, Content {
+    case restaurants = "restaurants"
+    case trips = "trips"
+    case roommates = "roommates"
+    case everyday = "everyday"
+
+    public var displayName: String {
+        switch self {
+        case .restaurants: return "Restaurants"
+        case .trips: return "Trips"
+        case .roommates: return "Roommates"
+        case .everyday: return "Everyday purchases"
+        }
+    }
+}
+
 /// Request body for creating or updating a split session.
 struct CreateSplitRequest: Content {
     let receiptId: UUID
     let participants: [ParticipantDTO]
     /// Item index (as string key) → array of participant UUIDs assigned to that item.
     let assignments: [String: [UUID]]
+    let category: String?
+}
+
+/// Request body for updating receipt or split category.
+struct UpdateCategoryRequest: Content {
+    let category: String?
+}
+
+/// Query parameters for history and search filtering.
+struct HistoryFilterQuery: Content {
+    let category: String?
+    let search: String?
+    let limit: Int?
+    let offset: Int?
+}
+
+/// A historical entry returned by history & search filters.
+struct HistoryItemDTO: Content {
+    let id: UUID
+    let receiptId: UUID?
+    let title: String
+    let category: String?
+    let total: Double
+    let createdAt: Date?
+    let participantCount: Int
+    let isSettled: Bool
+    let shareableURL: String?
+    let itemsSummary: [String]?
 }
 
 /// A participant in a bill split.
@@ -95,6 +139,7 @@ struct SplitSessionResponse: Content {
     let participants: [ParticipantDTO]
     let balances: [PersonBalanceDTO]
     let receiptTotal: Double
+    let category: String?
     let shareableURL: String?
     let createdAt: Date?
 }
@@ -172,3 +217,103 @@ struct SplitStatusResponse: Content {
         let paymentMethod: String?
     }
 }
+
+/// An individual split share within an expense.
+public struct ExpenseSplitDTO: Codable, Content {
+    public let participantId: UUID
+    public let amount: Double?
+
+    public init(participantId: UUID, amount: Double? = nil) {
+        self.participantId = participantId
+        self.amount = amount
+    }
+}
+
+/// Represents an expense incurred by a participant in a group.
+public struct ExpenseDTO: Codable, Content {
+    public let id: UUID?
+    public let title: String?
+    public let amount: Double
+    public let paidBy: UUID
+    /// Participant IDs sharing this expense equally.
+    public let splitWith: [UUID]?
+    /// Custom weighted or fixed splits for this expense.
+    public let splits: [ExpenseSplitDTO]?
+
+    public init(
+        id: UUID? = nil,
+        title: String? = nil,
+        amount: Double,
+        paidBy: UUID,
+        splitWith: [UUID]? = nil,
+        splits: [ExpenseSplitDTO]? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.amount = amount
+        self.paidBy = paidBy
+        self.splitWith = splitWith
+        self.splits = splits
+    }
+}
+
+/// A direct transfer computed by the minimum-cash-flow algorithm.
+public struct SimplifiedPaymentDTO: Codable, Content {
+    public let fromId: UUID
+    public let fromName: String
+    public let toId: UUID
+    public let toName: String
+    public let amount: Double
+    public let formattedText: String
+
+    public init(
+        fromId: UUID,
+        fromName: String,
+        toId: UUID,
+        toName: String,
+        amount: Double,
+        formattedText: String
+    ) {
+        self.fromId = fromId
+        self.fromName = fromName
+        self.toId = toId
+        self.toName = toName
+        self.amount = amount
+        self.formattedText = formattedText
+    }
+}
+
+/// Request body for optimizing multiple expenses into fewest transfers.
+public struct SimplifyExpensesRequest: Content {
+    public let participants: [ParticipantDTO]
+    public let expenses: [ExpenseDTO]
+
+    public init(participants: [ParticipantDTO], expenses: [ExpenseDTO]) {
+        self.participants = participants
+        self.expenses = expenses
+    }
+}
+
+/// Response returned by the minimum-cash-flow algorithm with reduced transfers and plain text lines.
+public struct SimplifyExpensesResponse: Content {
+    public let transfers: [SimplifiedPaymentDTO]
+    public let lines: [String]
+    public let totalTransferred: Double
+    public let originalExpenseCount: Int
+    public let transferCount: Int
+
+    public init(
+        transfers: [SimplifiedPaymentDTO],
+        lines: [String],
+        totalTransferred: Double,
+        originalExpenseCount: Int,
+        transferCount: Int
+    ) {
+        self.transfers = transfers
+        self.lines = lines
+        self.totalTransferred = totalTransferred
+        self.originalExpenseCount = originalExpenseCount
+        self.transferCount = transferCount
+    }
+}
+

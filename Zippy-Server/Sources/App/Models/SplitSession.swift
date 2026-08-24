@@ -28,6 +28,10 @@ final class SplitSession: Model, Content, @unchecked Sendable {
     @OptionalField(key: "share_token")
     var shareToken: String?
 
+    /// Optional category tag: "restaurants", "trips", "roommates", "everyday".
+    @OptionalField(key: "category")
+    var category: String?
+
     @Timestamp(key: "created_at", on: .create)
     var createdAt: Date?
 
@@ -42,7 +46,8 @@ final class SplitSession: Model, Content, @unchecked Sendable {
         participants: [ParticipantDTO],
         assignments: [String: [UUID]],
         balances: [PersonBalanceDTO],
-        shareToken: String? = nil
+        shareToken: String? = nil,
+        category: String? = nil
     ) {
         self.id = id
         self.receiptId = receiptId
@@ -50,5 +55,6 @@ final class SplitSession: Model, Content, @unchecked Sendable {
         self.assignments = assignments
         self.balances = balances
         self.shareToken = shareToken
+        self.category = category
     }
 }

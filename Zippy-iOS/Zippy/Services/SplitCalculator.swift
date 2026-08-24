@@ -80,9 +80,74 @@ enum SplitCalculator {
         return SplitResult(balances: balances, assignedSubtotal: round2(groupSubtotal))
     }
 
+    /// Optimizes balances into the fewest direct transfers using the minimum-cash-flow algorithm.
+    static func simplify(balances: [PersonBalance], hostId: UUID? = nil) -> [SimplifiedPayment] {
+        guard !balances.isEmpty else { return [] }
+
+        struct NetParticipant {
+            let id: UUID
+            let name: String
+            var netCents: Int64
+        }
+
+        let host = hostId ?? balances.first?.participantId ?? UUID()
+        let totalBillCents = Int64((balances.reduce(0.0) { $0 + $1.total } * 100).rounded())
+
+        var netMap: [UUID: Int64] = [:]
+        for b in balances {
+            let owedCents = Int64((b.total * 100).rounded())
+            netMap[b.participantId, default: 0] -= owedCents
+        }
+        netMap[host, default: 0] += totalBillCents
+
+        var participants = balances.map { b in
+            NetParticipant(id: b.participantId, name: b.name, netCents: netMap[b.participantId] ?? 0)
+        }
+
+        var transfers: [SimplifiedPayment] = []
+
+        while true {
+            guard let maxCreditorIdx = participants.indices.max(by: { participants[$0].netCents < participants[$1].netCents }),
+                  participants[maxCreditorIdx].netCents > 0 else {
+                break
+            }
+
+            guard let maxDebtorIdx = participants.indices.min(by: { participants[$0].netCents < participants[$1].netCents }),
+                  participants[maxDebtorIdx].netCents < 0 else {
+                break
+            }
+
+            let credit = participants[maxCreditorIdx].netCents
+            let debt = -participants[maxDebtorIdx].netCents
+            let settle = min(credit, debt)
+            guard settle > 0 else { break }
+
+            let debtor = participants[maxDebtorIdx]
+            let creditor = participants[maxCreditorIdx]
+            let amount = Double(settle) / 100.0
+            let formattedAmount = String(format: "$%.2f", amount)
+            let line = "\(debtor.name) pays \(creditor.name) \(formattedAmount)"
+
+            transfers.append(SimplifiedPayment(
+                fromId: debtor.id,
+                fromName: debtor.name,
+                toId: creditor.id,
+                toName: creditor.name,
+                amount: amount,
+                formattedText: line
+            ))
+
+            participants[maxDebtorIdx].netCents += settle
+            participants[maxCreditorIdx].netCents -= settle
+        }
+
+        return transfers
+    }
+
     // MARK: - Private
 
     private static func round2(_ value: Double) -> Double {
         (value * 100).rounded() / 100
     }
 }
+

@@ -20,5 +20,11 @@ struct ExtractedReceiptResponse: Codable, Identifiable, Equatable {
     let tax: Double
     let tip: Double
     let total: Double
+    var category: String?
     let createdAt: String?
+
+    var parsedCategory: ReceiptCategory? {
+        get { ReceiptCategory(flexibleString: category) }
+        set { category = newValue?.rawValue }
+    }
 }

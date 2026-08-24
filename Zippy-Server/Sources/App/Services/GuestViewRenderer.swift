@@ -539,6 +539,48 @@ enum GuestViewRenderer {
                     margin-top: 6px;
                     padding-top: 8px;
                 }
+                /* Context Selector */
+                .context-selector-container {
+                    margin-top: 14px;
+                    padding-top: 4px;
+                }
+                .context-header {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    border-bottom: 1px solid var(--border-dark);
+                    padding-bottom: 4px;
+                    margin-bottom: 8px;
+                }
+                .context-options-grid {
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    gap: 8px;
+                }
+                .context-option-btn {
+                    background-color: var(--bg);
+                    border: 1px solid var(--border);
+                    color: var(--text);
+                    font-family: var(--font-mono);
+                    font-size: 11px;
+                    padding: 10px 12px;
+                    text-align: left;
+                    cursor: pointer;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    border-radius: 0;
+                    transition: background-color 0.15s ease, border-color 0.15s ease;
+                }
+                .context-option-btn:hover {
+                    background-color: var(--surface);
+                }
+                .context-option-btn.selected {
+                    background-color: var(--text);
+                    color: var(--bg);
+                    border-color: var(--border-dark);
+                    font-weight: 700;
+                }
                 /* Toast notification */
                 .toast {
                     position: fixed;
@@ -591,6 +633,35 @@ enum GuestViewRenderer {
                     <div class="progress-text">
                         <span id="collectedText">\(formatCurrency(totalCollected)) collected</span>
                         <span id="remainingText">\(formatCurrency(max(0, receiptTotal - totalCollected))) remaining</span>
+                    </div>
+                    <div style="margin-top: 10px; text-align: right;">
+                        <a href="/s/\(token)/simplified" style="font-family: var(--font-mono); font-size: 11px; color: var(--text); text-decoration: underline; text-transform: uppercase; letter-spacing: 0.05em;">Simplified payments →</a>
+                    </div>
+                </div>
+
+                <!-- Context Selector under thin black header -->
+                <div class="context-selector-container">
+                    <div class="context-header">
+                        <span class="mono-label" style="color: var(--text);">CONTEXT</span>
+                        <span id="currentCategoryLabel" style="font-family: var(--font-mono); font-size: 10px; color: var(--text-secondary); text-transform: uppercase;">\(session.category?.uppercased() ?? "OPTIONAL")</span>
+                    </div>
+                    <div class="context-options-grid" id="contextOptionsGrid">
+                        <button type="button" class="context-option-btn \(session.category == "restaurants" ? "selected" : "")" onclick="setContextCategory('restaurants')">
+                            <span>Restaurants</span>
+                            <span class="indicator">\(session.category == "restaurants" ? "●" : "")</span>
+                        </button>
+                        <button type="button" class="context-option-btn \(session.category == "trips" ? "selected" : "")" onclick="setContextCategory('trips')">
+                            <span>Trips</span>
+                            <span class="indicator">\(session.category == "trips" ? "●" : "")</span>
+                        </button>
+                        <button type="button" class="context-option-btn \(session.category == "roommates" ? "selected" : "")" onclick="setContextCategory('roommates')">
+                            <span>Roommates</span>
+                            <span class="indicator">\(session.category == "roommates" ? "●" : "")</span>
+                        </button>
+                        <button type="button" class="context-option-btn \(session.category == "everyday" ? "selected" : "")" onclick="setContextCategory('everyday')">
+                            <span>Everyday purchases</span>
+                            <span class="indicator">\(session.category == "everyday" ? "●" : "")</span>
+                        </button>
                     </div>
                 </div>
 
@@ -748,10 +819,43 @@ enum GuestViewRenderer {
                 const ASSIGNMENTS = \(renderAssignmentsJSON(assignments: assignments));
                 let BALANCES = \(sessionDataJSON);
                 let selectedParticipantId = null;
+                let currentCategory = "\(session.category ?? "")";
 
                 // Format currency helper
                 function formatMoney(amount) {
                     return '$' + (Number(amount) || 0).toFixed(2);
+                }
+
+                // Context Category Handler
+                async function setContextCategory(cat) {
+                    const newCategory = currentCategory === cat ? null : cat;
+                    currentCategory = newCategory || "";
+                    
+                    const buttons = document.querySelectorAll('.context-option-btn');
+                    const categories = ['restaurants', 'trips', 'roommates', 'everyday'];
+                    buttons.forEach((btn, idx) => {
+                        const c = categories[idx];
+                        const isSel = (c === currentCategory);
+                        btn.classList.toggle('selected', isSel);
+                        const ind = btn.querySelector('.indicator');
+                        if (ind) ind.textContent = isSel ? '●' : '';
+                    });
+                    
+                    const label = document.getElementById('currentCategoryLabel');
+                    if (label) {
+                        label.textContent = currentCategory ? currentCategory.toUpperCase() : 'OPTIONAL';
+                    }
+                    showToast(currentCategory ? 'Context: ' + currentCategory : 'Context cleared');
+                    
+                    try {
+                        await fetch('/s/' + SESSION_TOKEN + '/category', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ category: newCategory })
+                        });
+                    } catch (e) {
+                        console.error('Failed to sync category:', e);
+                    }
                 }
 
                 // Show toast notification
@@ -1254,5 +1358,92 @@ enum GuestViewRenderer {
            .replacingOccurrences(of: "\"", with: "&quot;")
            .replacingOccurrences(of: "'", with: "&#39;")
     }
+
+    /// Renders a stark white screen displaying the reduced list of black text lines titled "Simplified payments".
+    public static func renderSimplifiedPayments(lines: [String], title: String = "Simplified payments", backURL: String? = nil) -> String {
+        let linesHTML = lines.map { line in
+            "<li class=\"payment-line\">\(escapeHTML(line))</li>"
+        }.joined(separator: "\n")
+
+        let backLinkHTML = backURL != nil ? "<a href=\"\(backURL!)\" class=\"back-link\">← Back to bill</a>" : ""
+
+        return """
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+            <meta name="theme-color" content="#FFFFFF">
+            <title>\(escapeHTML(title))</title>
+            <style>
+                *, *::before, *::after {
+                    box-sizing: border-box;
+                    margin: 0;
+                    padding: 0;
+                    -webkit-font-smoothing: antialiased;
+                }
+                body {
+                    background-color: #FFFFFF;
+                    color: #000000;
+                    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Mono", Menlo, Monaco, Consolas, "Segoe UI", Roboto, sans-serif;
+                    line-height: 1.6;
+                    min-height: 100vh;
+                    padding: 48px 24px;
+                }
+                .container {
+                    max-width: 480px;
+                    margin: 0 auto;
+                }
+                h1 {
+                    font-size: 28px;
+                    font-weight: 700;
+                    letter-spacing: -0.03em;
+                    color: #000000;
+                    margin-bottom: 32px;
+                }
+                .payment-list {
+                    list-style: none;
+                    margin: 0;
+                    padding: 0;
+                }
+                .payment-line {
+                    font-family: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+                    font-size: 16px;
+                    font-weight: 500;
+                    color: #000000;
+                    padding: 16px 0;
+                    border-bottom: 1px solid #EAEAEA;
+                }
+                .payment-line:last-child {
+                    border-bottom: none;
+                }
+                .back-link {
+                    display: inline-block;
+                    margin-top: 40px;
+                    font-family: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+                    font-size: 13px;
+                    color: #000000;
+                    text-decoration: underline;
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                }
+                .back-link:hover {
+                    opacity: 0.7;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>\(escapeHTML(title))</h1>
+                <ul class="payment-list">
+                    \(linesHTML)
+                </ul>
+                \(backLinkHTML)
+            </div>
+        </body>
+        </html>
+        """
+    }
 }
+
 

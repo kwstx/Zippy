@@ -50,6 +50,7 @@ public func configure(_ app: Application) async throws {
     // Register migrations
     app.migrations.add(CreateExtractedReceipt())
     app.migrations.add(CreateSplitSession())
+    app.migrations.add(AddCategoryMigration())
     
     // Auto-migrate in development
     try await app.autoMigrate()

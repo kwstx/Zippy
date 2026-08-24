@@ -8,6 +8,7 @@ struct ScanReceiptView: View {
     @State private var showingCamera = false
     @State private var showingPhotoLibrary = false
     @State private var showingResult = false
+    @State private var showingHistory = false
 
     var body: some View {
         NavigationStack {
@@ -115,6 +116,22 @@ struct ScanReceiptView: View {
             }
             .sheet(isPresented: $showingPhotoLibrary) {
                 PhotoPicker(selectedImage: $viewModel.selectedImage)
+            }
+            .sheet(isPresented: $showingHistory) {
+                HistoryView()
+            }
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: { showingHistory = true }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "clock.arrow.circlepath")
+                                .font(.system(size: 13, design: .monospaced))
+                            Text("History")
+                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        }
+                        .foregroundColor(.black)
+                    }
+                }
             }
             .onChange(of: viewModel.selectedImage) { _ in
                 Task {

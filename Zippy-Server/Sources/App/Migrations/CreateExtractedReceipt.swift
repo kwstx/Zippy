@@ -10,6 +10,7 @@ struct CreateExtractedReceipt: AsyncMigration {
             .field("tax", .double, .required)
             .field("tip", .double, .required)
             .field("total", .double, .required)
+            .field("category", .string)
             .field("created_at", .datetime)
             .unique(on: "reference_id")
             .create()

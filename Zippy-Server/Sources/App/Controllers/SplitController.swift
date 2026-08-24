@@ -43,6 +43,12 @@ struct SplitController {
         )
 
         // Upsert: check for existing session for this receipt
+        let categoryTag = input.category ?? receipt.category
+        if input.category != nil && receipt.category != input.category {
+            receipt.category = input.category
+            try await receipt.update(on: req.db)
+        }
+
         let session: SplitSession
         let token: String
         if let existing = try await SplitSession.query(on: req.db)
@@ -51,6 +57,7 @@ struct SplitController {
             existing.participants = input.participants
             existing.assignments = input.assignments
             existing.balances = balances
+            existing.category = categoryTag
             if existing.shareToken == nil {
                 existing.shareToken = Self.generateSecureToken()
             }
@@ -64,14 +71,15 @@ struct SplitController {
                 participants: input.participants,
                 assignments: input.assignments,
                 balances: balances,
-                shareToken: generatedToken
+                shareToken: generatedToken,
+                category: categoryTag
             )
             try await newSession.save(on: req.db)
             session = newSession
             token = generatedToken
         }
 
-        req.logger.info("Split session \(session.id?.uuidString ?? "?") saved for receipt \(input.receiptId) with token \(token)")
+        req.logger.info("Split session \(session.id?.uuidString ?? "?") saved for receipt \(input.receiptId) with category '\(session.category ?? "none")' and token \(token)")
 
         return SplitSessionResponse(
             id: session.id!,
@@ -79,6 +87,7 @@ struct SplitController {
             participants: session.participants,
             balances: session.balances,
             receiptTotal: receipt.total,
+            category: session.category,
             shareableURL: Self.makeShortURL(for: token, req: req),
             createdAt: session.createdAt
         )
@@ -108,6 +117,7 @@ struct SplitController {
             participants: session.participants,
             balances: session.balances,
             receiptTotal: receipt?.total ?? 0,
+            category: session.category ?? receipt?.category,
             shareableURL: shareableURL,
             createdAt: session.createdAt
         )
@@ -140,6 +150,7 @@ struct SplitController {
                 participants: session.participants,
                 balances: session.balances,
                 receiptTotal: receipt.total,
+                category: session.category ?? receipt.category,
                 shareableURL: Self.makeShortURL(for: token, req: req),
                 createdAt: session.createdAt
             )
@@ -480,4 +491,222 @@ struct SplitController {
             participants: participants
         )
     }
+
+    /// Optimizes multiple expenses into the minimal number of direct transfers using the pure-Swift minimum cash flow algorithm.
+    @Sendable
+    func simplifyExpenses(req: Request) async throws -> SimplifyExpensesResponse {
+        let input = try req.content.decode(SimplifyExpensesRequest.self)
+        let response = MinimumCashFlowCalculator.simplifyExpenses(
+            participants: input.participants,
+            expenses: input.expenses
+        )
+        req.logger.info("Simplified \(input.expenses.count) expenses for \(input.participants.count) participants into \(response.transferCount) transfers")
+        return response
+    }
+
+    /// Retrieves simplified payments for an existing split session, rendering either JSON or a minimalist white HTML screen.
+    @Sendable
+    func getSimplifiedPayments(req: Request) async throws -> Response {
+        guard let token = req.parameters.get("token") else {
+            throw Abort(.badRequest, reason: "Missing share token.")
+        }
+
+        guard let session = try await SplitSession.query(on: req.db)
+            .filter(\.$shareToken == token)
+            .first() else {
+            throw Abort(.notFound, reason: "No split session found for token: \(token)")
+        }
+
+        let simplified = MinimumCashFlowCalculator.simplifyBalances(balances: session.balances)
+
+        let acceptHeader = req.headers.first(name: .accept) ?? ""
+        let isJsonRequest = acceptHeader.contains("application/json") && !acceptHeader.contains("text/html")
+
+        if isJsonRequest {
+            return try await simplified.encodeResponse(for: req)
+        }
+
+        // Render minimalist white screen titled "Simplified payments" with reduced black text lines
+        let html = GuestViewRenderer.renderSimplifiedPayments(
+            lines: simplified.lines,
+            title: "Simplified payments",
+            backURL: "/s/\(token)"
+        )
+
+        var headers = HTTPHeaders()
+        headers.add(name: .contentType, value: "text/html; charset=utf-8")
+        return Response(status: .ok, headers: headers, body: .init(string: html))
+    }
+
+    /// Standalone public endpoint rendering a minimalist white screen titled "Simplified payments".
+    @Sendable
+    func viewSimplifiedPaymentsStandalone(req: Request) async throws -> Response {
+        let sampleLines = [
+            "Alice pays Bob $24.50",
+            "Charlie pays Bob $18.00",
+            "David pays Alice $12.25"
+        ]
+
+        let html = GuestViewRenderer.renderSimplifiedPayments(
+            lines: sampleLines,
+            title: "Simplified payments",
+            backURL: nil
+        )
+
+        var headers = HTTPHeaders()
+        headers.add(name: .contentType, value: "text/html; charset=utf-8")
+        return Response(status: .ok, headers: headers, body: .init(string: html))
+    }
+
+    /// Updates the category for a split session (by session UUID or share token).
+    @Sendable
+    func updateCategory(req: Request) async throws -> SplitSessionResponse {
+        let token = req.parameters.get("token")
+        let sessionId = req.parameters.get("id", as: UUID.self)
+        let input = try req.content.decode(UpdateCategoryRequest.self)
+
+        let session: SplitSession
+        if let token = token {
+            guard let found = try await SplitSession.query(on: req.db)
+                .filter(\.$shareToken == token)
+                .first() else {
+                throw Abort(.notFound, reason: "No split session found for token: \(token)")
+            }
+            session = found
+        } else if let sessionId = sessionId {
+            guard let found = try await SplitSession.find(sessionId, on: req.db) else {
+                throw Abort(.notFound, reason: "No split session found with ID: \(sessionId)")
+            }
+            session = found
+        } else {
+            throw Abort(.badRequest, reason: "Missing token or session ID.")
+        }
+
+        session.category = input.category
+        try await session.update(on: req.db)
+
+        // Also update linked receipt if present
+        if let receipt = try await ExtractedReceipt.find(session.receiptId, on: req.db) {
+            receipt.category = input.category
+            try await receipt.update(on: req.db)
+        }
+
+        req.logger.info("Updated category on split session \(session.id?.uuidString ?? "") to '\(input.category ?? "none")'")
+
+        let tokenStr = session.shareToken ?? session.id!.uuidString
+        let receipt = try await ExtractedReceipt.find(session.receiptId, on: req.db)
+
+        return SplitSessionResponse(
+            id: session.id!,
+            receiptId: session.receiptId,
+            participants: session.participants,
+            balances: session.balances,
+            receiptTotal: receipt?.total ?? 0,
+            category: session.category,
+            shareableURL: Self.makeShortURL(for: tokenStr, req: req),
+            createdAt: session.createdAt
+        )
+    }
+
+    /// Returns past split sessions and receipts filtered by optional category tag and text search.
+    @Sendable
+    func getHistory(req: Request) async throws -> [HistoryItemDTO] {
+        let query = try? req.query.decode(HistoryFilterQuery.self)
+        let categoryFilter = query?.category?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let searchTerm = query?.search?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        let allSessions = try await SplitSession.query(on: req.db)
+            .sort(\.$createdAt, .descending)
+            .all()
+
+        let allReceipts = try await ExtractedReceipt.query(on: req.db)
+            .sort(\.$createdAt, .descending)
+            .all()
+
+        let receiptMap = Dictionary(uniqueKeysWithValues: allReceipts.compactMap { r in
+            r.id != nil ? (r.id!, r) : nil
+        })
+
+        var historyItems: [HistoryItemDTO] = []
+        var processedReceiptIds = Set<UUID>()
+
+        for session in allSessions {
+            guard let sessionId = session.id else { continue }
+            let receipt = receiptMap[session.receiptId]
+            if let rId = receipt?.id {
+                processedReceiptIds.insert(rId)
+            }
+
+            let effectiveCategory = session.category ?? receipt?.category
+            let total = receipt?.total ?? session.balances.reduce(0.0) { $0 + $1.total }
+            let isSettled = !session.balances.isEmpty && session.balances.allSatisfy(\.isPaid)
+            let token = session.shareToken ?? sessionId.uuidString
+            let shareURL = Self.makeShortURL(for: token, req: req)
+            let itemsSummary = receipt?.items.prefix(4).map(\.name)
+
+            let title: String
+            if let firstItem = receipt?.items.first?.name, !firstItem.isEmpty {
+                title = firstItem + (receipt!.items.count > 1 ? " + \(receipt!.items.count - 1) more" : "")
+            } else if !session.participants.isEmpty {
+                title = "Split with " + session.participants.map(\.name).joined(separator: ", ")
+            } else {
+                title = "Split Receipt"
+            }
+
+            historyItems.append(HistoryItemDTO(
+                id: sessionId,
+                receiptId: session.receiptId,
+                title: title,
+                category: effectiveCategory,
+                total: total,
+                createdAt: session.createdAt,
+                participantCount: session.participants.count,
+                isSettled: isSettled,
+                shareableURL: shareURL,
+                itemsSummary: itemsSummary.map(Array.init)
+            ))
+        }
+
+        // Include any standalone receipts that haven't been split yet
+        for receipt in allReceipts {
+            guard let rId = receipt.id, !processedReceiptIds.contains(rId) else { continue }
+            let title = receipt.items.first?.name ?? "Receipt (\(receipt.referenceId.prefix(6)))"
+            let itemsSummary = receipt.items.prefix(4).map(\.name)
+
+            historyItems.append(HistoryItemDTO(
+                id: rId,
+                receiptId: rId,
+                title: title,
+                category: receipt.category,
+                total: receipt.total,
+                createdAt: receipt.createdAt,
+                participantCount: 0,
+                isSettled: false,
+                shareableURL: nil,
+                itemsSummary: Array(itemsSummary)
+            ))
+        }
+
+        // Apply Category Filter
+        if let category = categoryFilter, !category.isEmpty, category != "all" {
+            historyItems = historyItems.filter { item in
+                guard let cat = item.category?.lowercased() else { return false }
+                return cat == category || cat.contains(category)
+            }
+        }
+
+        // Apply Keyword Search Filter
+        if let search = searchTerm, !search.isEmpty {
+            historyItems = historyItems.filter { item in
+                let matchesTitle = item.title.lowercased().contains(search)
+                let matchesCategory = item.category?.lowercased().contains(search) ?? false
+                let matchesItems = item.itemsSummary?.contains { $0.lowercased().contains(search) } ?? false
+                let matchesTotal = String(format: "%.2f", item.total).contains(search)
+                return matchesTitle || matchesCategory || matchesItems || matchesTotal
+            }
+        }
+
+        return historyItems
+    }
 }
+

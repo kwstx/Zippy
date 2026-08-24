@@ -11,9 +11,12 @@ final class SplitViewModel: ObservableObject {
     @Published var participants: [Participant] = []
     @Published var assignments: [Int: Set<UUID>] = [:]
     @Published private(set) var splitResult: SplitResult?
+    @Published var simplifiedPayments: [SimplifiedPayment] = []
+    @Published var selectedCategory: ReceiptCategory?
     @Published var isFinalizing: Bool = false
     @Published var shareableURL: String?
     @Published var errorMessage: String?
+
 
     /// Indices of items that have no assignees (used for UI warnings).
     var unassignedItemIndices: [Int] {
@@ -25,6 +28,7 @@ final class SplitViewModel: ObservableObject {
 
     init(receipt: ExtractedReceiptResponse) {
         self.receipt = receipt
+        self.selectedCategory = receipt.parsedCategory
     }
 
     // MARK: - Participant Management
@@ -81,14 +85,36 @@ final class SplitViewModel: ObservableObject {
     // MARK: - Calculation
 
     func recalculate() {
-        splitResult = SplitCalculator.calculate(
+        let result = SplitCalculator.calculate(
             items: receipt.items,
             participants: participants,
             assignments: assignments,
             tax: receipt.tax,
             tip: receipt.tip
         )
+        splitResult = result
+        simplifiedPayments = SplitCalculator.simplify(balances: result.balances)
     }
+
+    /// Fetches authoritative simplified payments computed by the Vapor backend.
+    func fetchSimplifiedPayments() async {
+        guard let token = shareableURL?.components(separatedBy: "/s/").last, !token.isEmpty else {
+            if let balances = splitResult?.balances {
+                simplifiedPayments = SplitCalculator.simplify(balances: balances)
+            }
+            return
+        }
+
+        do {
+            let response = try await ReceiptService.getSimplifiedPayments(token: token)
+            simplifiedPayments = response.transfers
+        } catch {
+            if let balances = splitResult?.balances {
+                simplifiedPayments = SplitCalculator.simplify(balances: balances)
+            }
+        }
+    }
+
 
     // MARK: - Server Finalization
 
@@ -111,7 +137,8 @@ final class SplitViewModel: ObservableObject {
             let response = try await ReceiptService.finalizeSplit(
                 receiptId: receiptId,
                 participants: participants,
-                assignments: wireAssignments
+                assignments: wireAssignments,
+                category: selectedCategory?.rawValue
             )
 
             // Update with authoritative server-computed balances
@@ -120,11 +147,34 @@ final class SplitViewModel: ObservableObject {
                 assignedSubtotal: splitResult?.assignedSubtotal ?? 0
             )
             self.shareableURL = response.shareableURL
+            if let cat = response.category {
+                self.selectedCategory = ReceiptCategory(flexibleString: cat)
+            }
         } catch {
             self.errorMessage = "Failed to save split: \(error.localizedDescription)"
         }
 
         isFinalizing = false
+    }
+
+    // MARK: - Category Management
+
+    func updateCategory(_ category: ReceiptCategory?) {
+        self.selectedCategory = category
+
+        // If receipt has an ID, update backend receipt category asynchronously
+        if let receiptId = receipt.id {
+            Task {
+                try? await ReceiptService.updateReceiptCategory(receiptId: receiptId, category: category?.rawValue)
+            }
+        }
+
+        // If session is already finalized with a share token, update backend split session category
+        if let token = shareableURL?.components(separatedBy: "/s/").last, !token.isEmpty {
+            Task {
+                try? await ReceiptService.updateSplitCategory(token: token, category: category?.rawValue)
+            }
+        }
     }
 
     // MARK: - External Payment Methods

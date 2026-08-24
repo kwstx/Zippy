@@ -10,11 +10,43 @@ struct ReceiptResultView: View {
     @State private var showingSplit: Bool = false
     @State private var settlementStatus: SettlementStatus = .unpaid
     @State private var selectedPaymentMethod: String? = nil
+    @State private var selectedCategory: ReceiptCategory?
+
+    init(receipt: ExtractedReceiptResponse) {
+        self.receipt = receipt
+        _selectedCategory = State(initialValue: receipt.parsedCategory)
+    }
+
+    private var receiptWithSelectedCategory: ExtractedReceiptResponse {
+        var updated = receipt
+        updated.category = selectedCategory?.rawValue
+        return updated
+    }
     
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
                 // Header
+                thinDivider()
+
+                // MARK: - Black & White Context Selector
+                ContextSelectorView(
+                    selectedCategory: $selectedCategory,
+                    isDarkBackground: true,
+                    headerTitle: "CONTEXT",
+                    onSelectionChanged: { newCategory in
+                        if let receiptId = receipt.id {
+                            Task {
+                                try? await ReceiptService.updateReceiptCategory(
+                                    receiptId: receiptId,
+                                    category: newCategory?.rawValue
+                                )
+                            }
+                        }
+                    }
+                )
+                .padding(.vertical, 12)
+
                 thinDivider()
                 
                 // Shared cost mode selector (only shown if any shared items exist)
@@ -73,7 +105,7 @@ struct ReceiptResultView: View {
         }
         .background(Color.black.ignoresSafeArea())
         .navigationDestination(isPresented: $showingSplit) {
-            SplitView(receipt: receipt)
+            SplitView(receipt: receiptWithSelectedCategory)
         }
     }
     

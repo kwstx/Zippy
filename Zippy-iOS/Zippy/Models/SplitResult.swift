@@ -54,3 +54,15 @@ struct SplitResult: Codable, Equatable {
     /// Sum of only the items that have been assigned to at least one person.
     let assignedSubtotal: Double
 }
+
+/// A simplified payment transfer returned by the minimum-cash-flow algorithm.
+struct SimplifiedPayment: Identifiable, Codable, Equatable {
+    var id: String { "\(fromId)-\(toId)-\(amount)" }
+    let fromId: UUID
+    let fromName: String
+    let toId: UUID
+    let toName: String
+    let amount: Double
+    let formattedText: String
+}
+

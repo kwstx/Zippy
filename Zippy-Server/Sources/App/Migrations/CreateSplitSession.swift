@@ -9,6 +9,7 @@ struct CreateSplitSession: AsyncMigration {
             .field("assignments", .json, .required)
             .field("balances", .json, .required)
             .field("share_token", .string)
+            .field("category", .string)
             .field("created_at", .datetime)
             .field("updated_at", .datetime)
             .create()

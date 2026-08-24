@@ -9,6 +9,7 @@ struct SplitSessionResponse: Decodable {
     let participants: [SplitParticipantDTO]
     let balances: [SplitBalanceDTO]
     let receiptTotal: Double
+    let category: String?
     let shareableURL: String?
     let createdAt: String?
 
@@ -42,6 +43,47 @@ struct SelectPaymentMethodResponse: Decodable {
     let instructions: String?
     let message: String
 }
+
+/// Response returned from Vapor minimum-cash-flow algorithm.
+struct SimplifyExpensesAPIResponse: Decodable {
+    let transfers: [SimplifiedPayment]
+    let lines: [String]
+    let totalTransferred: Double
+    let originalExpenseCount: Int
+    let transferCount: Int
+}
+
+/// An expense sent to the backend for debt simplification.
+struct ExpenseDTO: Codable {
+    let id: UUID?
+    let title: String?
+    let amount: Double
+    let paidBy: UUID
+    let splitWith: [UUID]?
+    let splits: [ExpenseSplitDTO]?
+
+    struct ExpenseSplitDTO: Codable {
+        let participantId: UUID
+        let amount: Double?
+    }
+
+    init(
+        id: UUID? = nil,
+        title: String? = nil,
+        amount: Double,
+        paidBy: UUID,
+        splitWith: [UUID]? = nil,
+        splits: [ExpenseSplitDTO]? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.amount = amount
+        self.paidBy = paidBy
+        self.splitWith = splitWith
+        self.splits = splits
+    }
+}
+
 
 extension SplitSessionResponse {
     /// Converts server balance DTOs to the app's PersonBalance model.
@@ -145,11 +187,13 @@ enum ReceiptService {
     ///   - receiptId: The database UUID of the extracted receipt.
     ///   - participants: The people splitting the bill.
     ///   - assignments: Item index (as string) → array of participant UUIDs.
+    ///   - category: Optional category tag ("restaurants", "trips", "roommates", "everyday").
     /// - Returns: The server-computed split session response.
     static func finalizeSplit(
         receiptId: UUID,
         participants: [Participant],
-        assignments: [String: [UUID]]
+        assignments: [String: [UUID]],
+        category: String? = nil
     ) async throws -> SplitSessionResponse {
         guard let url = URL(string: "http://localhost:8080/api/splits") else {
             throw URLError(.badURL)
@@ -163,6 +207,7 @@ enum ReceiptService {
             let receiptId: UUID
             let participants: [ParticipantPayload]
             let assignments: [String: [UUID]]
+            let category: String?
 
             struct ParticipantPayload: Encodable {
                 let id: UUID
@@ -173,7 +218,8 @@ enum ReceiptService {
         let payload = CreateSplitRequest(
             receiptId: receiptId,
             participants: participants.map { .init(id: $0.id, name: $0.name) },
-            assignments: assignments
+            assignments: assignments,
+            category: category
         )
 
         request.httpBody = try JSONEncoder().encode(payload)
@@ -285,4 +331,159 @@ enum ReceiptService {
 
         return try JSONDecoder().decode(SplitSessionResponse.self, from: data)
     }
+
+    /// Calls the pure-Swift minimum-cash-flow engine on the Vapor backend to optimize multiple expenses.
+    static func simplifyExpenses(
+        participants: [Participant],
+        expenses: [ExpenseDTO]
+    ) async throws -> SimplifyExpensesAPIResponse {
+        guard let url = URL(string: "http://localhost:8080/api/splits/simplify") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        struct RequestBody: Encodable {
+            let participants: [ParticipantPayload]
+            let expenses: [ExpenseDTO]
+
+            struct ParticipantPayload: Encodable {
+                let id: UUID
+                let name: String
+            }
+        }
+
+        let payload = RequestBody(
+            participants: participants.map { .init(id: $0.id, name: $0.name) },
+            expenses: expenses
+        )
+        request.httpBody = try JSONEncoder().encode(payload)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+
+        return try JSONDecoder().decode(SimplifyExpensesAPIResponse.self, from: data)
+    }
+
+    /// Fetches simplified payments for a token from the Vapor backend.
+    static func getSimplifiedPayments(token: String) async throws -> SimplifyExpensesAPIResponse {
+        guard let url = URL(string: "http://localhost:8080/s/\(token)/simplified") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+
+        return try JSONDecoder().decode(SimplifyExpensesAPIResponse.self, from: data)
+    }
+
+    /// Updates the optional category tag on an extracted receipt.
+    static func updateReceiptCategory(receiptId: UUID, category: String?) async throws {
+        guard let url = URL(string: "http://localhost:8080/api/receipts/\(receiptId)/category") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        struct CategoryPayload: Encodable {
+            let category: String?
+        }
+
+        request.httpBody = try JSONEncoder().encode(CategoryPayload(category: category))
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+    }
+
+    /// Updates the optional category tag on an active split session via token.
+    static func updateSplitCategory(token: String, category: String?) async throws {
+        guard let url = URL(string: "http://localhost:8080/s/\(token)/category") else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        struct CategoryPayload: Encodable {
+            let category: String?
+        }
+
+        request.httpBody = try JSONEncoder().encode(CategoryPayload(category: category))
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+    }
+
+    /// Fetches receipt and split history powered by optional category and search filters.
+    static func fetchHistory(
+        category: ReceiptCategory? = nil,
+        search: String? = nil
+    ) async throws -> [HistoryItem] {
+        var components = URLComponents(string: "http://localhost:8080/api/splits/history")
+        var queryItems: [URLQueryItem] = []
+
+        if let cat = category {
+            queryItems.append(URLQueryItem(name: "category", value: cat.rawValue))
+        }
+        if let q = search, !q.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            queryItems.append(URLQueryItem(name: "search", value: q.trimmingCharacters(in: .whitespacesAndNewlines)))
+        }
+
+        if !queryItems.isEmpty {
+            components?.queryItems = queryItems
+        }
+
+        guard let url = components?.url else {
+            throw URLError(.badURL)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode([HistoryItem].self, from: data)
+    }
 }
+
+/// A historical receipt or split session entry returned by search/history filtering.
+struct HistoryItem: Codable, Identifiable {
+    let id: UUID
+    let receiptId: UUID?
+    let title: String
+    let category: String?
+    let total: Double
+    let createdAt: Date?
+    let participantCount: Int
+    let isSettled: Bool
+    let shareableURL: String?
+    let itemsSummary: [String]?
+
+    var parsedCategory: ReceiptCategory? {
+        ReceiptCategory(flexibleString: category)
+    }
+}
+
