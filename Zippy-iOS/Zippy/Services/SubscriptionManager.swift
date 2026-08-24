@@ -55,7 +55,7 @@ final class SubscriptionManager: ObservableObject {
     // MARK: - StoreKit 2 Transaction Listener
     private func listenForTransactions() -> Task<Void, Never> {
         Task.detached {
-            for await result in Transaction.updates {
+            for await result in StoreKit.Transaction.updates {
                 do {
                     let transaction = try self.checkVerified(result)
                     await self.handleVerifiedTransaction(transaction)
@@ -134,7 +134,7 @@ final class SubscriptionManager: ObservableObject {
     }
 
     /// Handles a verified StoreKit 2 transaction by sending it to the backend subscription service.
-    private func handleVerifiedTransaction(_ transaction: Transaction) async {
+    private func handleVerifiedTransaction(_ transaction: StoreKit.Transaction) async {
         do {
             let status = try await SubscriptionService.verifyStoreKitTransaction(
                 userId: deviceId,
@@ -182,7 +182,7 @@ final class SubscriptionManager: ObservableObject {
         isLoading = true
         do {
             try await AppStore.sync()
-            for await result in Transaction.currentEntitlements {
+            for await result in StoreKit.Transaction.currentEntitlements {
                 if let transaction = try? checkVerified(result) {
                     await handleVerifiedTransaction(transaction)
                 }

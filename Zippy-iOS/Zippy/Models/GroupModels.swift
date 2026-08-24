@@ -76,7 +76,7 @@ enum LedgerEventType: String, Codable, Equatable {
 }
 
 /// A participant's share in a group expense.
-struct LedgerSplit: Identifiable, Codable, Equatable {
+struct LedgerSplit: Identifiable, Codable, Equatable, Hashable {
     var id: UUID { memberId }
     let memberId: UUID
     let memberName: String
@@ -100,7 +100,7 @@ struct LedgerSplit: Identifiable, Codable, Equatable {
 }
 
 /// An immutable event in the group's append-only ledger event stream.
-struct LedgerEvent: Identifiable, Codable, Equatable {
+struct LedgerEvent: Identifiable, Codable, Equatable, Hashable {
     let id: UUID
     let groupId: UUID
     let eventType: String
@@ -134,7 +134,7 @@ struct LedgerEvent: Identifiable, Codable, Equatable {
 }
 
 /// Calculated net balance for a member in a group.
-struct GroupMemberBalance: Identifiable, Codable, Equatable {
+struct GroupMemberBalance: Identifiable, Codable, Equatable, Hashable {
     var id: UUID { participantId }
     let participantId: UUID
     let name: String
