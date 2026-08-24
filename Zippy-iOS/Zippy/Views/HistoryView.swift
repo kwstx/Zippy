@@ -7,6 +7,7 @@ import SwiftUI
 /// context-aware category filtering, filtered row retrieval from PostgreSQL,
 /// and live pure-Swift CSV/PDF streaming exports.
 struct HistoryView: View {
+    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
     @State private var selectedCategory: ReceiptCategory? = nil
     @State private var searchQuery: String = ""
     @State private var historyItems: [HistoryItem] = []
@@ -15,9 +16,10 @@ struct HistoryView: View {
     @State private var exportFormatLabel: String = ""
     @State private var errorMessage: String? = nil
 
-    // Export sharing state
+    // Export sharing & paywall state
     @State private var exportedFileURL: URL? = nil
     @State private var showingShareSheet: Bool = false
+    @State private var showingPaywall: Bool = false
 
     @Environment(\.dismiss) private var dismiss
 
@@ -180,6 +182,9 @@ struct HistoryView: View {
             }
             .task {
                 loadHistory()
+            }
+            .sheet(isPresented: $showingPaywall) {
+                PaywallSheetView(subscriptionManager: subscriptionManager)
             }
             .sheet(isPresented: $showingShareSheet) {
                 if let fileURL = exportedFileURL {
@@ -350,6 +355,12 @@ struct HistoryView: View {
 
     private func triggerExport(format: String) {
         guard !isExporting else { return }
+
+        // PDF export is gated behind Pro subscription
+        if format.lowercased() == "pdf" && !subscriptionManager.isPro {
+            showingPaywall = true
+            return
+        }
 
         isExporting = true
         exportFormatLabel = format.uppercased()

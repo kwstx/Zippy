@@ -890,6 +890,9 @@ struct SplitController {
         req.logger.info("Exporting \(items.count) expense history item(s) as \(format.uppercased())")
 
         if format == "pdf" {
+            let userId = req.headers.first(name: "X-User-Id") ?? req.headers.first(name: "X-Device-Id") ?? "default_user"
+            try await SubscriptionService.assertProUser(userId: userId, featureName: "PDF reports and exports", on: req.db)
+
             return ExportStreamingService.streamPDF(
                 items: items,
                 categoryFilter: category,

@@ -56,6 +56,14 @@ struct GroupController {
             throw Abort(.badRequest, reason: "Group name cannot be empty.")
         }
 
+        // Check subscription tier group limits
+        let userId = req.headers.first(name: "X-User-Id") ?? req.headers.first(name: "X-Device-Id") ?? "default_user"
+        let groupCount = try await PersistentGroup.query(on: req.db).count()
+        let canCreate = try await SubscriptionService.canCreateGroup(userId: userId, currentGroupCount: groupCount, on: req.db)
+        guard canCreate else {
+            throw Abort(.forbidden, reason: "Free tier is limited to 2 groups. Upgrade to Pro for unlimited groups.")
+        }
+
         // Ensure at least one member or assign default
         var members = input.members
         if members.isEmpty {

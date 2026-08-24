@@ -4,6 +4,7 @@ import SwiftUI
 
 struct ScanReceiptView: View {
     @StateObject private var viewModel = ScanReceiptViewModel()
+    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
     @State private var showingImagePickerOptions = false
     @State private var showingCamera = false
     @State private var showingPhotoLibrary = false
@@ -11,6 +12,7 @@ struct ScanReceiptView: View {
     @State private var showingHistory = false
     @State private var showingGroups = false
     @State private var showingManualEntry = false
+    @State private var showingPaywall = false
 
     var body: some View {
         NavigationStack {
@@ -151,6 +153,12 @@ struct ScanReceiptView: View {
             .sheet(isPresented: $showingGroups) {
                 GroupListView()
             }
+            .sheet(isPresented: $showingPaywall) {
+                PaywallSheetView(subscriptionManager: subscriptionManager)
+            }
+            .sheet(isPresented: $subscriptionManager.showPaywall) {
+                PaywallSheetView(subscriptionManager: subscriptionManager)
+            }
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: { showingGroups = true }) {
@@ -161,6 +169,17 @@ struct ScanReceiptView: View {
                                 .font(.system(size: 12, weight: .medium, design: .monospaced))
                         }
                         .foregroundColor(.black)
+                    }
+                }
+                ToolbarItem(placement: .principal) {
+                    Button(action: { showingPaywall = true }) {
+                        Text(subscriptionManager.isPro ? "PRO" : "FREE")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundColor(subscriptionManager.isPro ? .white : .black)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(subscriptionManager.isPro ? Color.black : Color.white)
+                            .overlay(Rectangle().stroke(Color.black, lineWidth: 0.8))
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {

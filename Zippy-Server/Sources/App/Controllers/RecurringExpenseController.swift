@@ -49,6 +49,10 @@ struct RecurringExpenseController {
             throw Abort(.notFound, reason: "Group not found.")
         }
 
+        // Gate recurring expense templates behind Pro subscription
+        let userId = req.headers.first(name: "X-User-Id") ?? req.headers.first(name: "X-Device-Id") ?? "default_user"
+        try await SubscriptionService.assertProUser(userId: userId, featureName: "Recurring expense automation", on: req.db)
+
         let input = try req.content.decode(CreateRecurringExpenseRequest.self)
 
         let trimmedTitle = input.title.trimmingCharacters(in: .whitespacesAndNewlines)

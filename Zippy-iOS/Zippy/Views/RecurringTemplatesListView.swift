@@ -7,9 +7,11 @@ import SwiftUI
 struct RecurringTemplatesListView: View {
     let group: PersistentGroup
     @ObservedObject var viewModel: GroupLedgerViewModel
+    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
     @Environment(\.dismiss) private var dismiss
 
     @State private var showingAddSheet = false
+    @State private var showingPaywall = false
     @State private var isProcessingCron = false
     @State private var statusMessage: String?
 
@@ -79,7 +81,13 @@ struct RecurringTemplatesListView: View {
                         .fill(Color.black)
                         .frame(height: 1)
 
-                    Button(action: { showingAddSheet = true }) {
+                    Button(action: {
+                        if subscriptionManager.isPro {
+                            showingAddSheet = true
+                        } else {
+                            showingPaywall = true
+                        }
+                    }) {
                         HStack {
                             Image(systemName: "plus")
                             Text("NEW RECURRING TEMPLATE")
@@ -104,6 +112,9 @@ struct RecurringTemplatesListView: View {
                         .font(.system(size: 14, design: .monospaced))
                         .foregroundColor(.black)
                 }
+            }
+            .sheet(isPresented: $showingPaywall) {
+                PaywallSheetView(subscriptionManager: subscriptionManager)
             }
             .sheet(isPresented: $showingAddSheet) {
                 AddRecurringExpenseSheet(group: group) { title, amount, currency, payerId, splitIds, freq, note, startDate in

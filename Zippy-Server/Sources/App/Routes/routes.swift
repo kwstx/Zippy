@@ -6,8 +6,17 @@ func routes(_ app: Application) throws {
     let groupController = GroupController()
     let reminderController = ReminderController()
     let recurringController = RecurringExpenseController()
+    let subscriptionController = SubscriptionController()
     
     app.group("api") { api in
+        api.group("subscription") { sub in
+            sub.get("status", use: subscriptionController.getStatus)
+            sub.get("status", ":userId", use: subscriptionController.getStatusForUser)
+            sub.post("verify", use: subscriptionController.verify)
+            sub.post("upgrade", use: subscriptionController.upgrade)
+            sub.post("check", use: subscriptionController.checkFeature)
+        }
+        
         api.group("groups") { groups in
             groups.get(use: groupController.list)
             groups.post(use: groupController.create)

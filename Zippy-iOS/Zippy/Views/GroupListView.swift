@@ -7,7 +7,9 @@ import SwiftUI
 /// Selecting a group navigates to its append-only ledger history loaded from the backend.
 struct GroupListView: View {
     @StateObject private var viewModel = GroupListViewModel()
+    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
     @State private var showingCreateGroupSheet = false
+    @State private var showingPaywall = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -99,12 +101,21 @@ struct GroupListView: View {
                 }
 
                 ToolbarItem(placement: .primaryAction) {
-                    Button(action: { showingCreateGroupSheet = true }) {
+                    Button(action: {
+                        if !subscriptionManager.isPro && viewModel.groups.count >= (subscriptionManager.limits?.maxGroups ?? 2) {
+                            showingPaywall = true
+                        } else {
+                            showingCreateGroupSheet = true
+                        }
+                    }) {
                         Image(systemName: "plus")
                             .font(.system(size: 14, weight: .bold, design: .monospaced))
                             .foregroundColor(.black)
                     }
                 }
+            }
+            .sheet(isPresented: $showingPaywall) {
+                PaywallSheetView(subscriptionManager: subscriptionManager)
             }
             .sheet(isPresented: $showingCreateGroupSheet) {
                 CreateGroupSheet { name, members, currency in
