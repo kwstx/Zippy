@@ -7,6 +7,7 @@ func routes(_ app: Application) throws {
     let reminderController = ReminderController()
     let recurringController = RecurringExpenseController()
     let subscriptionController = SubscriptionController()
+    let privacyController = PrivacyController()
     
     app.group("api") { api in
         api.group("subscription") { sub in
@@ -90,6 +91,16 @@ func routes(_ app: Application) throws {
 
         api.group("webhooks") { webhooks in
             webhooks.post("payment", use: splitController.handleWebhook)
+        }
+
+        api.group("privacy") { privacy in
+            privacy.get("controls", use: privacyController.getControls)
+            privacy.patch("controls", use: privacyController.patchControls)
+            privacy.delete("receipts", use: privacyController.deleteReceipts)
+            privacy.delete("splits", use: privacyController.deleteSplits)
+            privacy.delete("groups", use: privacyController.deleteGroups)
+            privacy.delete("reminders", use: privacyController.deleteReminders)
+            privacy.delete("all", use: privacyController.deleteAllData)
         }
 
         api.get("rates") { req async -> [String: Double] in

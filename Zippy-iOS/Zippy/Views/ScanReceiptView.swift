@@ -13,6 +13,7 @@ struct ScanReceiptView: View {
     @State private var showingGroups = false
     @State private var showingManualEntry = false
     @State private var showingPaywall = false
+    @State private var showingPrivacy = false
 
     var body: some View {
         NavigationStack {
@@ -159,6 +160,9 @@ struct ScanReceiptView: View {
             .sheet(isPresented: $subscriptionManager.showPaywall) {
                 PaywallSheetView(subscriptionManager: subscriptionManager)
             }
+            .sheet(isPresented: $showingPrivacy) {
+                PrivacySettingsView()
+            }
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: { showingGroups = true }) {
@@ -183,14 +187,22 @@ struct ScanReceiptView: View {
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: { showingHistory = true }) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "clock.arrow.circlepath")
-                                .font(.system(size: 13, design: .monospaced))
-                            Text("History")
-                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    HStack(spacing: 12) {
+                        Button(action: { showingHistory = true }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "clock.arrow.circlepath")
+                                    .font(.system(size: 13, design: .monospaced))
+                                Text("History")
+                                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                            }
+                            .foregroundColor(.black)
                         }
-                        .foregroundColor(.black)
+
+                        Button(action: { showingPrivacy = true }) {
+                            Image(systemName: "shield")
+                                .font(.system(size: 13, weight: .medium, design: .monospaced))
+                                .foregroundColor(.black)
+                        }
                     }
                 }
             }
