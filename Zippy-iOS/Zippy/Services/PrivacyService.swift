@@ -36,7 +36,7 @@ enum PrivacyService {
 
     /// Shared device identity header for authenticated requests.
     private static var deviceId: String {
-        SubscriptionManager.shared.deviceId
+        SubscriptionManager.currentDeviceId
     }
 
     // MARK: - Controls (GET & PATCH)

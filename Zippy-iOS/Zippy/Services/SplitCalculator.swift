@@ -105,7 +105,6 @@ enum SplitCalculator {
         tax: Double,
         tip: Double
     ) -> SplitResult {
-        let subtotal = items.reduce(0.0) { $0 + $1.price }
         return calculateItemized(
             items: items,
             participants: participants,
@@ -461,7 +460,6 @@ enum SplitCalculator {
 
         let balances = participants.map { p in
             let pTotal = exactAmounts[p.id] ?? defaultPerPerson
-            let ratio = total > 0 ? (pTotal / total) : (1.0 / count)
             let pSubtotal = ((pTotal * (total > 0 ? (subtotal / total) : 1.0)) * 100).rounded() / 100
             let pTax = ((pTotal * (total > 0 ? (tax / total) : 0.0)) * 100).rounded() / 100
             let pTip = ((pTotal - pSubtotal - pTax) * 100).rounded() / 100

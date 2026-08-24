@@ -27,13 +27,17 @@ final class SubscriptionManager: ObservableObject {
     @Published var errorMessage: String?
 
     // MARK: - Device Identity
-    var deviceId: String {
+    nonisolated static var currentDeviceId: String {
         if let saved = UserDefaults.standard.string(forKey: "zippy_device_id") {
             return saved
         }
         let newId = UUID().uuidString
         UserDefaults.standard.set(newId, forKey: "zippy_device_id")
         return newId
+    }
+
+    nonisolated var deviceId: String {
+        Self.currentDeviceId
     }
 
     private var transactionListenerTask: Task<Void, Never>?
