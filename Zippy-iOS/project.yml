@@ -1,0 +1,26 @@
+﻿name: Zippy
+options:
+  bundleIdPrefix: com.zippy
+  deploymentTarget:
+    iOS: "16.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    GENERATE_INFOPLIST_FILE: YES
+    CURRENT_PROJECT_VERSION: 1
+    MARKETING_VERSION: "1.0.0"
+    INFOPLIST_KEY_UILaunchScreen_Generation: YES
+    INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait"
+    INFOPLIST_KEY_NSCameraUsageDescription: "Zippy needs camera access to scan receipts."
+    INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "Zippy needs photo library access to upload receipts."
+targets:
+  Zippy:
+    type: application
+    platform: iOS
+    sources:
+      - path: Zippy
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.zippy.app
+      INFOPLIST_KEY_CFBundleDisplayName: Zippy
+      INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES

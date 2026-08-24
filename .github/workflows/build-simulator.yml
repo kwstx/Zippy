@@ -1,0 +1,48 @@
+﻿name: Build iOS Simulator App
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-simulator:
+    name: Build iOS Simulator .app / .zip
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode Project
+        working-directory: Zippy-iOS
+        run: xcodegen generate
+
+      - name: Build for iOS Simulator
+        run: |
+          xcodebuild build \
+            -project Zippy-iOS/Zippy.xcodeproj \
+            -scheme Zippy \
+            -destination "generic/platform=iOS Simulator" \
+            -configuration Debug \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
+      - name: Compress Simulator .app to .zip
+        run: |
+          cd build/Build/Products/Debug-iphonesimulator
+          zip -r -X Zippy-Simulator.zip Zippy.app
+
+      - name: Upload Simulator Bundle Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Zippy-Simulator-App
+          path: build/Build/Products/Debug-iphonesimulator/Zippy-Simulator.zip
+          retention-days: 14
