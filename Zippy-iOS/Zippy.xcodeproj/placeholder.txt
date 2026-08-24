@@ -1,0 +1,1 @@
+Open this folder in Xcode and create a project, or use `swift package init`
