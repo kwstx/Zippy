@@ -250,7 +250,7 @@ struct ScanReceiptView: View {
             }
             .navigationDestination(isPresented: $showingManualEntry) {
                 EditableReceiptFormView()
-            }   }
+            }
         }
     }
 }
