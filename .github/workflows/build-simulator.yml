@@ -1,4 +1,4 @@
-﻿name: Build iOS Simulator App
+name: Build iOS Simulator App
 
 on:
   push:
@@ -42,14 +42,9 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY=""
 
-      - name: Compress Simulator .app to .zip
-        run: |
-          cd build/Build/Products/Debug-iphonesimulator
-          zip -r -X Zippy-Simulator.zip Zippy.app
-
       - name: Upload Simulator Bundle Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Zippy-Simulator-App
-          path: build/Build/Products/Debug-iphonesimulator/Zippy-Simulator.zip
+          path: build/Build/Products/Debug-iphonesimulator/Zippy.app
           retention-days: 14
