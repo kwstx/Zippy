@@ -125,6 +125,7 @@ struct SplitView: View {
         .sheet(isPresented: $showingStatusScreen) {
             PaymentStatusView(
                 token: viewModel.shareableURL?.components(separatedBy: "/s/").last,
+                invoiceTitle: (viewModel.receipt.merchantName?.isEmpty ?? true) ? "Trip Invoice – Japan Summer 2025" : "Trip Invoice – \(viewModel.receipt.merchantName!)",
                 initialBalances: viewModel.splitResult?.balances ?? []
             )
         }
